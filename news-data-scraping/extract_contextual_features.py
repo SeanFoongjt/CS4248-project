@@ -492,13 +492,14 @@ def find_snapshot_for_url_on_day(
                     ("fl", "timestamp,original,statuscode,mimetype"),
                     ("filter", "statuscode:200"),
                     ("filter", "mimetype:text/html"),
+                    ("collapse", "urlkey"),
                     ("from", day_yyyymmdd),
                     ("to", day_yyyymmdd),
                 ]
                 r = safe_get(
                     CDX_URL,
                     params=params,
-                    timeout=(10, 60),
+                    timeout=(10, 30),
                     retries=retries,
                     backoff_factor=backoff_factor,
                 )
@@ -563,13 +564,14 @@ def find_snapshot_for_url_in_range(
                     ("fl", "timestamp,original,statuscode,mimetype"),
                     ("filter", "statuscode:200"),
                     ("filter", "mimetype:text/html"),
+                    ("collapse", "urlkey"),
                     ("from", from_yyyymmdd),
                     ("to", to_yyyymmdd),
                 ]
                 r = safe_get(
                     CDX_URL,
                     params=params,
-                    timeout=(10, 90),
+                    timeout=(10, 30),
                     retries=retries,
                     backoff_factor=backoff_factor,
                 )

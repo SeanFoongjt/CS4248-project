@@ -5,7 +5,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 from bs4 import BeautifulSoup
 from requests import HTTPError
@@ -35,6 +35,7 @@ OUTPUT_FIELDS = [
 
 JSON_LD_TYPE_KEYS = {"@type", "type"}
 WAYBACK_TS_RE = re.compile(r"/web/(\d{8,14})/")
+WAYBACK_CAPTURE_RE = re.compile(r"^(https?://web\.archive\.org/web/\d{8,14}/)(https?://.+)$")
 
 
 def log(message: str):
@@ -133,6 +134,47 @@ def extract_wayback_timestamp(wayback_url: str):
     return match.group(1)
 
 
+def build_wayback_url_variants(wayback_url: str, source: str):
+    cleaned_url = clean_text(wayback_url)
+    if not cleaned_url:
+        return []
+
+    variants = [cleaned_url]
+    if source != "huff":
+        return variants
+
+    match = WAYBACK_CAPTURE_RE.match(cleaned_url)
+    if not match:
+        return variants
+
+    prefix, original_url = match.groups()
+    try:
+        parsed = urlsplit(original_url)
+    except Exception:
+        return variants
+
+    host = parsed.netloc
+    path = parsed.path or "/"
+    query = parsed.query
+    candidates = []
+
+    alt_host = "www.huffpost.com" if host == "www.huffingtonpost.com" else host
+    no_html_path = path[:-5] if path.endswith(".html") else path
+
+    candidates.append(urlunsplit((parsed.scheme, alt_host, path, query, "")))
+    candidates.append(urlunsplit((parsed.scheme, host, no_html_path, query, "")))
+    candidates.append(urlunsplit((parsed.scheme, alt_host, no_html_path, query, "")))
+
+    seen = {cleaned_url}
+    for candidate_original in candidates:
+        candidate_wayback = prefix + candidate_original
+        if candidate_wayback in seen:
+            continue
+        seen.add(candidate_wayback)
+        variants.append(candidate_wayback)
+    return variants
+
+
 def detect_source_from_article_link(article_link: str):
     try:
         host = host_no_www(urlsplit(article_link).netloc)
@@ -157,7 +199,7 @@ def load_input_rows(onion_dump: Path, huff_dump: Path, input_target: str, limit:
     return rows
 
 
-def load_completed_ids(output_jsonl: Path):
+def load_successful_ids(output_jsonl: Path):
     if not output_jsonl.exists():
         return set()
     completed = set()
@@ -171,7 +213,9 @@ def load_completed_ids(output_jsonl: Path):
             except Exception:
                 continue
             article_link = clean_text(obj.get("article_link"))
-            if article_link:
+            fetch_error = clean_text(obj.get("fetch_error"))
+            parse_error = clean_text(obj.get("parse_error"))
+            if article_link and not fetch_error and not parse_error:
                 completed.add(article_link)
     return completed
 
@@ -505,32 +549,45 @@ def detect_rate_limit_response(response):
 
 def process_row(row, retries: int, backoff_factor: float, request_wait_sec: float):
     out = empty_output_row(row)
-    try:
-        response = fetch_wayback_response(
-            row["wayback_url"],
-            retries=retries,
-            backoff_factor=backoff_factor,
-            request_wait_sec=request_wait_sec,
-        )
-    except Exception as exc:
-        out["fetch_error"] = f"{type(exc).__name__}: {exc}"
+    attempted_errors = []
+
+    for candidate_wayback_url in build_wayback_url_variants(row["wayback_url"], row["source"]):
+        try:
+            response = fetch_wayback_response(
+                candidate_wayback_url,
+                retries=retries,
+                backoff_factor=backoff_factor,
+                request_wait_sec=request_wait_sec,
+            )
+        except Exception as exc:
+            attempted_errors.append(f"{candidate_wayback_url} -> {type(exc).__name__}: {exc}")
+            continue
+
+        rate_limit_excerpt = detect_rate_limit_response(response)
+        if rate_limit_excerpt is not None:
+            out["wayback_url"] = candidate_wayback_url
+            raise RateLimitError(out, response.status_code, rate_limit_excerpt)
+
+        try:
+            response.raise_for_status()
+        except HTTPError as exc:
+            attempted_errors.append(
+                f"{candidate_wayback_url} -> HTTPError: status={response.status_code} detail={exc}"
+            )
+            continue
+
+        out["wayback_url"] = candidate_wayback_url
+        try:
+            extracted = extract_metadata_from_html(response.text, row["source"])
+            out.update(extracted)
+        except Exception as exc:
+            out["parse_error"] = f"{type(exc).__name__}: {exc}"
         return out
 
-    rate_limit_excerpt = detect_rate_limit_response(response)
-    if rate_limit_excerpt is not None:
-        raise RateLimitError(out, response.status_code, rate_limit_excerpt)
-
-    try:
-        response.raise_for_status()
-    except HTTPError as exc:
-        out["fetch_error"] = f"HTTPError: status={response.status_code} detail={exc}"
-        return out
-
-    try:
-        extracted = extract_metadata_from_html(response.text, row["source"])
-        out.update(extracted)
-    except Exception as exc:
-        out["parse_error"] = f"{type(exc).__name__}: {exc}"
+    if attempted_errors:
+        out["fetch_error"] = " | ".join(attempted_errors)
+    else:
+        out["fetch_error"] = "No Wayback URL variants available"
     return out
 
 
@@ -865,7 +922,7 @@ def main():
     )
 
     if args.resume:
-        completed_ids = load_completed_ids(output_jsonl)
+        completed_ids = load_successful_ids(output_jsonl)
         bugged_ids = {
             clean_text(item.get("article_link"))
             for item in load_json_list(bugged_rows_json)

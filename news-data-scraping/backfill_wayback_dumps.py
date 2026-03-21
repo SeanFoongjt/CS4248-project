@@ -388,7 +388,7 @@ def parse_args():
     base_dir = Path(__file__).resolve().parent
     parser.add_argument(
         "--dataset",
-        default=str(base_dir.parent / "archive" / "Sarcasm_Headlines_Dataset_v2.json"),
+        default=str(base_dir.parent / "Sarcasm_Headlines_Dataset_v2.json"),
         help="Path to dataset JSONL containing article_link.",
     )
     parser.add_argument(

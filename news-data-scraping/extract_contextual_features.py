@@ -1038,10 +1038,11 @@ def enrich_with_wayback_domain_index(
 
 
 def main():
+    base_dir = Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description="Extract contextual features using CDX.")
     parser.add_argument(
         "--input-jsonl",
-        default=str(Path("..") / "archive" / "Sarcasm_Headlines_Dataset_v2.json"),
+        default=str(base_dir.parent / "Sarcasm_Headlines_Dataset_v2.json"),
         help="Path to JSONL dataset containing article_link column.",
     )
     parser.add_argument("--url-col", default="article_link", help="URL column name.")

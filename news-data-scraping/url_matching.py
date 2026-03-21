@@ -412,7 +412,7 @@ def main():
     )
     parser.add_argument(
         "--dataset",
-        default=str(Path("..") / "archive" / "Sarcasm_Headlines_Dataset_v2.json"),
+        default=str(Path(__file__).resolve().parent.parent / "Sarcasm_Headlines_Dataset_v2.json"),
         help="Path to dataset JSONL containing article_link.",
     )
     parser.add_argument(

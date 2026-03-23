@@ -1,7 +1,9 @@
 import argparse
 import json
 import re
+import sys
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from pathlib import Path
@@ -40,7 +42,8 @@ WAYBACK_CAPTURE_RE = re.compile(r"^(https?://web\.archive\.org/web/\d{8,14}/)(ht
 
 def log(message: str):
     with LOG_LOCK:
-        print(message, flush=True)
+        safe = str(message).encode("ascii", "backslashreplace").decode("ascii")
+        print(safe, flush=True)
 
 
 class RateLimitError(Exception):
@@ -482,8 +485,7 @@ def remove_wayback_noise(soup: BeautifulSoup):
             node.decompose()
 
 
-def extract_metadata_from_html(html: str, source: str):
-    soup = BeautifulSoup(html, "lxml")
+def extract_metadata_from_soup(soup: BeautifulSoup, source: str):
     remove_wayback_noise(soup)
     blocks = parse_json_ld_blocks(soup)
     article_block = find_primary_article_json_ld(blocks)
@@ -499,6 +501,14 @@ def extract_metadata_from_html(html: str, source: str):
         "published_date": extract_published_date(article_block, soup),
         "parse_error": None,
     }
+
+
+def extract_metadata_from_response(response, source: str):
+    # Prefer raw response bytes so the HTML parser can honor in-document encoding
+    # hints instead of relying only on requests' decoded text.
+    html_input = response.content if getattr(response, "content", None) else response.text
+    soup = BeautifulSoup(html_input, "lxml")
+    return extract_metadata_from_soup(soup, source)
 
 
 def empty_output_row(base_row):
@@ -578,7 +588,7 @@ def process_row(row, retries: int, backoff_factor: float, request_wait_sec: floa
 
         out["wayback_url"] = candidate_wayback_url
         try:
-            extracted = extract_metadata_from_html(response.text, row["source"])
+            extracted = extract_metadata_from_response(response, row["source"])
             out.update(extracted)
         except Exception as exc:
             out["parse_error"] = f"{type(exc).__name__}: {exc}"
@@ -908,6 +918,10 @@ def parse_args():
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
     args = parse_args()
     onion_dump = Path(args.onion_dump)
     huff_dump = Path(args.huff_dump)

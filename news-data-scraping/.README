@@ -1,0 +1,82 @@
+News Data Scraping Handoff
+
+This folder contains the Wayback lookup and metadata extraction workflow for Onion and HuffPost article URLs used in this project.
+
+Setup
+
+1. From the repository root, install Python dependencies:
+   `pip install -r requirements.txt`
+2. Use Python 3.10+ if possible.
+3. These scripts call the Internet Archive Wayback/CDX endpoints, so network access is required.
+4. Wayback can rate-limit requests with HTTP 429. If that happens, rerun later with lower worker counts.
+
+Main Files
+
+- `huff-wayback-urls.json`
+  HuffPost article to Wayback URL mappings.
+- `onion-wayback-urls.json`
+  Onion article to Wayback URL mappings.
+- `wayback_article_metadata.jsonl`
+  Extracted metadata output. One JSON object per line.
+- `huff-wayback-urls-remaining-part1.json`
+- `huff-wayback-urls-remaining-part2.json`
+- `huff-wayback-urls-remaining-part3.json`
+  The remaining HuffPost URLs that are not yet extracted, split into three near-equal parts.
+- `extract_wayback_article_metadata.py`
+  Reads the dump JSON files and extracts article metadata from archived pages.
+- `backfill_wayback_dumps.py`
+  Finds missing Wayback snapshots for dataset article URLs and updates the dump JSON files.
+- `extract_contextual_features.py`
+  Separate pipeline for snapshot/content extraction into CSV outputs and cache files.
+- `url_matching.py`
+  URL normalization and host-matching helpers shared by the scripts.
+
+Current State
+
+- Errored HuffPost entries were removed from `wayback_article_metadata.jsonl`.
+- The cleaned metadata file currently has no remaining errored HuffPost records.
+- Remaining HuffPost URLs were computed by excluding:
+  - already successfully extracted HuffPost articles
+  - previously errored HuffPost articles that were removed from the metadata file
+- Those remaining URLs were saved into the three `huff-wayback-urls-remaining-part*.json` files.
+
+Current Split Counts
+
+- `huff-wayback-urls-remaining-part1.json`: 3754 URLs
+- `huff-wayback-urls-remaining-part2.json`: 3753 URLs
+- `huff-wayback-urls-remaining-part3.json`: 3753 URLs
+
+Recommended Workflow
+
+If the goal is to continue extracting HuffPost article metadata:
+
+1. Pick one of the `huff-wayback-urls-remaining-part*.json` files.
+2. Temporarily point `extract_wayback_article_metadata.py` at that file through `--huff-dump`.
+3. Use `--input-target huff`.
+4. Use `--resume` if writing into an existing JSONL output file.
+5. Keep workers modest to reduce Wayback rate limiting.
+
+Example command from this folder:
+
+`python extract_wayback_article_metadata.py --huff-dump huff-wayback-urls-remaining-part1.json --input-target huff --output-jsonl wayback_article_metadata_part1.jsonl --workers 4 --resume`
+
+Useful Commands
+
+Extract metadata from HuffPost dump:
+
+`python extract_wayback_article_metadata.py --input-target huff --workers 4 --resume`
+
+Extract metadata from Onion dump:
+
+`python extract_wayback_article_metadata.py --input-target onion --workers 4 --resume`
+
+Backfill missing Wayback mappings from the dataset:
+
+`python backfill_wayback_dumps.py --update-target both --workers 8`
+
+Notes
+
+- `wayback_article_metadata.jsonl` is append-friendly and resume-aware through article links.
+- `extract_wayback_article_metadata.py` stops early when it detects a Wayback rate-limit response and writes what it has already processed.
+- If collaborators want to keep outputs separate, it is safer to write to a new JSONL file per batch and merge later.
+- The root `.gitignore` now ignores any `.txt` file whose filename contains `url`.

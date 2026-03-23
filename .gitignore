@@ -6,6 +6,6 @@ __pycache__/
 .pytest_cache/
 
 .vscode/
+*url*.txt
 .DS_Store
 Thumbs.db
-

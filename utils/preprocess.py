@@ -1,21 +1,54 @@
+import ast
 import nltk
 import re
 import spacy
+from utils.constants import SECTION_MAPPINGS, ENTITY_MASKS
 from nltk.corpus import stopwords, wordnet
 from nltk.stem import WordNetLemmatizer
 from nltk.tokenize import word_tokenize
 
-nlp = spacy.load("en_core_web_trf")
+nlp = spacy.load("en_core_web_trf") # might take a while
 
-DEFAULT_MASKS = ["PERSON", "ORG", "GPE", "NORP", "PRODUCT", "DATE", "MONEY"]
 
-def mask(text: str, masks: list = DEFAULT_MASKS):
+def preprocess_article_section(entry, mappings = SECTION_MAPPINGS):
     """
+    Preprocesses an article section (category) of a news article.
+
+    Standardises article sections using a predefined set of mappings.
+    Maps rare article categories or those that have no defined mapping to "other".
+    """
+    if entry == '':
+        return entry
+    
+    if isinstance(entry, list):
+        items = entry
+    elif isinstance(entry, str) and entry.startswith('['):
+        try:
+            items = ast.literal_eval(entry)
+        except:
+            items = [entry]
+    else:
+        items = [entry]
+
+    # map to standard value or "other" if not in mappings
+    standardized = [mappings.get(str(item).lower(), "other") for item in items]
+
+    # remove duplicates
+    standardized = list(set(standardized))
+    
+    return ", ".join(standardized)
+
+
+def preprocess_description(text: str, masks: list = ENTITY_MASKS):
+    """
+    Preprocessor for the description of a news article for transformer models.
+
     Masks named entities such as names of locations and people to prevent data leakage.
     Replaces named entities with placeholder tokens like [PERSON].
-
-    Preferred for transformer-based models like RoBERTa.
     """
+
+    # remove starting lines like "NEW YORK—" because this pattern indicates the Onion
+    text = re.sub(r'^[A-Z\s,.]+—', '', text).strip()
 
     # masker
     doc = nlp(text)
@@ -70,10 +103,3 @@ def preprocess_for_bow(text: str, remove_punctuation: bool = True,
         tokens = [w for w in tokens if w not in _stopwords]
 
     return " ".join(tokens)
-
-if __name__ == "__main__":
-    test_text = "PROVIDENCE, RI - In spite of The Onion's best efforts to brave the ongoing winter storm " + \
-        "and freezing temperatures, the inclement weather currently affecting the Northeast has left " + \
-        "Providence-area liar Tim Carlson unable to commute to his office, the habitual deceiver " + \
-        "reported to his colleagues today. They haven't been able to."
-    print(mask(test_text))

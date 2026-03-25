@@ -243,8 +243,41 @@ def build_pipeline(
  
     # Train
     train(model, train_loader, val_loader, cfg, device)
+
+    torch.save(model.state_dict(), "sarcasm_model.pt")
+    print("Model saved.")
  
     return model
+
+def predict(texts: list[str], model_path: str = "sarcasm_model.pt") -> list[str]:
+    cfg       = RobertaConfig()
+    device    = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    tokenizer = RobertaTokenizer.from_pretrained(cfg.pretrained_name)
+
+    # Load model
+    model = RobertaSarcasmModel(cfg)
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.to(device)
+    model.eval()
+
+    results = []
+    with torch.no_grad():
+        for text in texts:
+            encoding = tokenizer(
+                text,
+                max_length=cfg.max_length,
+                padding="max_length",
+                truncation=True,
+                return_tensors="pt",
+            )
+            input_ids      = encoding["input_ids"].to(device)
+            attention_mask = encoding["attention_mask"].to(device)
+
+            logits = model(input_ids, attention_mask)
+            pred   = logits.argmax(dim=-1).item()
+            results.append("sarcastic" if pred == 1 else "not sarcastic")
+
+    return results
  
  
 # ─────────────────────────────────────────────

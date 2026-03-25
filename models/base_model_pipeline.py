@@ -261,7 +261,7 @@ if __name__ == "__main__":
             label = item["is_sarcastic"]
             samples.append((headline, label))
 
-    with open('Sarcasm_Headlines_Datasetjson') as f:
+    with open('Sarcasm_Headlines_Dataset.json') as f:
         for line in f:
             item = json.loads(line)
             headline = item["headline"]
@@ -269,7 +269,7 @@ if __name__ == "__main__":
             samples.append((headline, label))
 
     seed = random.randint(1,100)
-    print("The seed is " + seed)
+    print("The seed is " + str(seed))
 
     data, data_test = train_test_split(samples, test_size=0.2, random_state=seed)
     data_train, data_valid = train_test_split(data, test_size=0.25, random_state=seed)

@@ -453,6 +453,10 @@ def build_pipeline(
 
     # Output Model
     output_path = os.path.join(cfg.output_dir, f"sarcasm_gnn_model_{cfg.use_conceptnet}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pt")
+    save_dir = os.path.dirname(output_path)
+    if save_dir:  # Only attempt to make directories if a parent folder is specified
+        os.makedirs(save_dir, exist_ok=True)
+    
     torch.save({
         'model_state_dict': model.state_dict(),
         'num_relations': total_unique_relations,
@@ -514,7 +518,7 @@ def build_pipeline(
 
     return model
 
-def predict(texts: list[str], model_path: str = "sarcasm_gnn_model.pt") -> list[str]:
+def predict(texts: list[str], model_path: str = "sarcasm_gnn_model.pt", output_dir: str = "results") -> list[str]:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     checkpoint = torch.load(model_path, map_location=device)
@@ -522,7 +526,7 @@ def predict(texts: list[str], model_path: str = "sarcasm_gnn_model.pt") -> list[
     irf_weights = checkpoint['irf_weights']
     use_conceptnet = checkpoint.get('use_conceptnet', True)
 
-    cfg = RobertaConfig(use_conceptnet=use_conceptnet)
+    cfg = RobertaConfig(use_conceptnet=use_conceptnet, output_dir=output_dir)
     tokenizer = RobertaTokenizer.from_pretrained(cfg.pretrained_name)
 
     model = RobertaGNNModel(cfg, num_relations, irf_weights)
@@ -599,7 +603,7 @@ if __name__ == "__main__":
             logging.error(f"Checkpoint file not found at {args.model_path}. Please train the model first or provide a valid path.")
             sys.exit(1)
             
-        predictions = predict(samples, model_path=args.model_path)
+        predictions = predict(samples, model_path=args.model_path, output_dir=args.output)
         
         logging.info("\n--- Prediction Results ---")
         for text, pred in zip(samples, predictions):
@@ -619,7 +623,8 @@ if __name__ == "__main__":
             learning_rate=args.lr,
             max_length=args.max_length,
             use_conceptnet=not args.no_conceptnet,
-            export_visualisations=not args.no_visualisations
+            export_visualisations=not args.no_visualisations,
+            output_dir=args.output
         )
         
         logging.info("\n--- Initiating Model Pipeline ---")

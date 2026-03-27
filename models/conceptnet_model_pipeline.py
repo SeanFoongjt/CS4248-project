@@ -1,5 +1,6 @@
 from __future__ import annotations
  
+from datetime import datetime
 import os
 import sys
 import json
@@ -11,6 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import pandas as pd
 from dataclasses import dataclass
 from typing import Optional
 from tqdm import tqdm
@@ -50,12 +52,14 @@ class RobertaConfig:
     num_labels: int = 2
     dropout: float = 0.1
     learning_rate: float = 2e-5
+    gnn_learning_rate: float = 1e-3
     batch_size: int = 32
     num_epochs: int = 3
     warmup_ratio: float = 0.1
     edge_embed_dim: int = 16  
     use_conceptnet: bool = True  
-    export_visualisations: bool = True  
+    export_visualisations: bool = True
+    output_dir: str = "result"  
  
  
 # ─────────────────────────────────────────────
@@ -269,11 +273,12 @@ class RobertaGNNModel(nn.Module):
 
         edge_attr_1d = edge_attr.view(-1) 
         raw_edge_feats = self.edge_embedding(edge_attr_1d)
-        normalized_edge_feats = F.normalize(raw_edge_feats, p=2, dim=-1)
+        # normalized_edge_feats = F.normalize(raw_edge_feats, p=2, dim=-1)
         irf_scalars = self.irf_weights[edge_attr_1d].unsqueeze(-1)
         empirical_scalars = edge_weight.view(-1).unsqueeze(-1)
-        scaled_edge_feats = normalized_edge_feats * irf_scalars * empirical_scalars
-        
+        # scaled_edge_feats = normalized_edge_feats * irf_scalars * empirical_scalars
+        scaled_edge_feats = raw_edge_feats * irf_scalars * empirical_scalars
+
         x_gnn_flat = self.gat(x_flat, edge_index, edge_attr=scaled_edge_feats)
         x_gnn_flat = F.relu(x_gnn_flat + x_flat) 
         
@@ -298,8 +303,20 @@ def train(
  
     model.to(device)
     loss_fn = nn.CrossEntropyLoss()
- 
-    optimizer = AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=0.01)
+
+    transformer_params = []
+    gnn_params = []
+    
+    for name, param in model.named_parameters():
+        if "encoder" in name:
+            transformer_params.append(param)
+        else:
+            gnn_params.append(param)
+            
+    optimizer = AdamW([
+        {"params": transformer_params, "lr": cfg.learning_rate},
+        {"params": gnn_params, "lr": cfg.gnn_learning_rate}
+    ], weight_decay=0.01)
  
     total_steps = len(train_loader) * cfg.num_epochs
     warmup_steps = int(total_steps * cfg.warmup_ratio)
@@ -357,7 +374,7 @@ def train(
         )
 
         if cfg.export_visualisations:
-            visualise.track_and_log_weights(model, global_state.RELATION_VOCAB, epoch)
+            visualise.track_and_log_weights(model, global_state.RELATION_VOCAB, epoch)        
 
     return training_history
  
@@ -379,7 +396,7 @@ def evaluate(
     all_preds = []
     all_labels = []
  
-    for batch in tqdm(loader, desc="Evaluating"):
+    for batch in loader:
         input_ids      = batch["input_ids"].to(device)
         attention_mask = batch["attention_mask"].to(device)
         labels         = batch["label"].to(device)
@@ -435,22 +452,39 @@ def build_pipeline(
     history = train(model, train_loader, val_loader, cfg, device)
 
     # Output Model
+    output_path = os.path.join(cfg.output_dir, f"sarcasm_gnn_model_{cfg.use_conceptnet}_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.pt")
     torch.save({
         'model_state_dict': model.state_dict(),
         'num_relations': total_unique_relations,
         'irf_weights': irf_weights,
         'use_conceptnet': cfg.use_conceptnet
-    }, "sarcasm_gnn_model.pt")
+    }, output_path)
     
-    logging.info("Graph-augmented Transformer Checkpoint saved.")
+    logging.info(f"Graph-augmented Transformer Checkpoint saved to {output_path}.")
 
     # Render Visualisations
     if cfg.export_visualisations:
-        os.makedirs("visualisations", exist_ok=True)
-        os.makedirs("visualisations/graphs", exist_ok=True)
+        visualisation_dir = os.path.join(cfg.output_dir, "visualisations")
+        os.makedirs(visualisation_dir, exist_ok=True)
+        os.makedirs(os.path.join(visualisation_dir, "graphs"), exist_ok=True)
         
-        visualise.plot_training_metrics(history, "visualisations")
-        visualise.plot_weight_trajectories(visualise.weight_history, os.path.join("visualisations", "weight_trajectories.png"))
+        visualise.plot_training_metrics(history, visualisation_dir)
+        visualise.plot_weight_trajectories(visualise.weight_history, os.path.join(visualisation_dir, "weight_trajectories.png"))
+
+        history_df = pd.DataFrame(history)
+        history_df.index = history_df.index + 1  # 1-based indexing for epochs
+        history_df.index.name = 'Epoch'
+        history_csv_path = os.path.join(visualisation_dir, "training_history.csv")
+        history_df.to_csv(history_csv_path)
+        logging.info(f"Training metrics exported to {history_csv_path}")
+
+        if visualise.weight_history:
+            weights_df = pd.DataFrame(visualise.weight_history)
+            weights_df.index = weights_df.index + 1 
+            weights_df.index.name = 'Epoch'
+            weights_csv_path = os.path.join(visualisation_dir, "relation_weights.csv")
+            weights_df.to_csv(weights_csv_path)
+            logging.info(f"ConceptNet relation weights exported to {weights_csv_path}")
         
         # Export a few sample graphs
         model.eval()
@@ -466,7 +500,7 @@ def build_pipeline(
                 pred_label = logits.argmax(dim=-1).item()
                 
             pyg_data = Data(edge_index=item['edge_index'], num_nodes=len(item['concepts']))
-            save_path = os.path.join("visualisations", "graphs", f"sample_{idx:03d}.png")
+            save_path = os.path.join(visualisation_dir, "graphs", f"sample_{idx:03d}.png")
             visualise.save_gnn_graph(
                 data=pyg_data, 
                 concepts=item['concepts'], 
@@ -524,6 +558,7 @@ def predict(texts: list[str], model_path: str = "sarcasm_gnn_model.pt") -> list[
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train and evaluate the Sarcasm GNN Model")
     parser.add_argument("--input", type=str, default="Sarcasm_Headlines_Dataset_v2.json", help="Path to the input JSON dataset")
+    parser.add_argument("--output", type=str, default="result", help="Path to save the trained model checkpoint")
     parser.add_argument("--epochs", type=int, default=3, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size for training and evaluation")
     parser.add_argument("--lr", type=float, default=2e-5, help="Learning rate for the optimizer")
@@ -532,10 +567,14 @@ if __name__ == "__main__":
     parser.add_argument("--no-visualisations", action="store_true", help="Disable exporting performance visualisations")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
     
+    parser.add_argument("--predict", action="store_true", help="Run in inference mode rather than training")
+    parser.add_argument("--model-path", type=str, default="sarcasm_gnn_model.pt", help="Path to the trained model checkpoint (for prediction)")
+
     args = parser.parse_args()
 
     # Apply global custom logger rules 
-    setup_logger()
+    log_path = os.path.join(args.output, f"training_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log")
+    setup_logger(path=log_path)
 
     samples = []
     
@@ -552,37 +591,53 @@ if __name__ == "__main__":
         logging.error("Dataset files not found. Please ensure the Sarcasm JSON files are in the directory.")
         sys.exit(1)
 
-    seed = args.seed if args.seed is not None else random.randint(1, 100)
-    logging.info("The seed is " + str(seed))
+    if args.predict:
+        logging.info("\n--- Initiating Inference Mode ---")
+        logging.info(f"Loading checkpoint from: {args.model_path}")
+        
+        if not os.path.exists(args.model_path):
+            logging.error(f"Checkpoint file not found at {args.model_path}. Please train the model first or provide a valid path.")
+            sys.exit(1)
+            
+        predictions = predict(samples, model_path=args.model_path)
+        
+        logging.info("\n--- Prediction Results ---")
+        for text, pred in zip(samples, predictions):
+            logging.info(f"Text: {text}\nPred: {pred}\n")
+        sys.exit(0)
 
-    data, data_test = train_test_split(samples, test_size=0.2, random_state=seed)
-    data_train, data_valid = train_test_split(data, test_size=0.25, random_state=seed)
- 
-    cfg = RobertaConfig(
-        num_epochs=args.epochs,
-        batch_size=args.batch_size,
-        learning_rate=args.lr,
-        max_length=args.max_length,
-        use_conceptnet=not args.no_conceptnet,
-        export_visualisations=not args.no_visualisations
-    )
-    
-    logging.info("\n--- Initiating Model Pipeline ---")
-    model = build_pipeline(data_train, data_valid, cfg)
+    else:
+        seed = args.seed if args.seed is not None else random.randint(1, 100)
+        logging.info("The seed is " + str(seed))
 
-    logging.info("\n--- Evaluating Model on Unseen Test Set ---")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    tokenizer = RobertaTokenizer.from_pretrained(cfg.pretrained_name)
+        data, data_test = train_test_split(samples, test_size=0.2, random_state=seed)
+        data_train, data_valid = train_test_split(data, test_size=0.25, random_state=seed)
     
-    test_ds = SarcasmGraphDataset(data_test, tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet)
-    test_loader = DataLoader(test_ds, batch_size=cfg.batch_size, collate_fn=graph_collate_fn)
-    loss_fn = nn.CrossEntropyLoss()
-    
-    test_loss, test_acc, test_prec, test_rec, test_f1 = evaluate(model, test_loader, loss_fn, device)
-    
-    logging.info(f"\nFinal Test Set Results:")
-    logging.info(f"Loss:      {test_loss:.4f}")
-    logging.info(f"Accuracy:  {test_acc:.4f}")
-    logging.info(f"Precision: {test_prec:.4f}")
-    logging.info(f"Recall:    {test_rec:.4f}")
-    logging.info(f"F1-Score:  {test_f1:.4f}")
+        cfg = RobertaConfig(
+            num_epochs=args.epochs,
+            batch_size=args.batch_size,
+            learning_rate=args.lr,
+            max_length=args.max_length,
+            use_conceptnet=not args.no_conceptnet,
+            export_visualisations=not args.no_visualisations
+        )
+        
+        logging.info("\n--- Initiating Model Pipeline ---")
+        model = build_pipeline(data_train, data_valid, cfg)
+
+        logging.info("\n--- Evaluating Model on Unseen Test Set ---")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        tokenizer = RobertaTokenizer.from_pretrained(cfg.pretrained_name)
+        
+        test_ds = SarcasmGraphDataset(data_test, tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet)
+        test_loader = DataLoader(test_ds, batch_size=cfg.batch_size, collate_fn=graph_collate_fn)
+        loss_fn = nn.CrossEntropyLoss()
+        
+        test_loss, test_acc, test_prec, test_rec, test_f1 = evaluate(model, test_loader, loss_fn, device)
+        
+        logging.info(f"\nFinal Test Set Results:")
+        logging.info(f"Loss:      {test_loss:.4f}")
+        logging.info(f"Accuracy:  {test_acc:.4f}")
+        logging.info(f"Precision: {test_prec:.4f}")
+        logging.info(f"Recall:    {test_rec:.4f}")
+        logging.info(f"F1-Score:  {test_f1:.4f}")

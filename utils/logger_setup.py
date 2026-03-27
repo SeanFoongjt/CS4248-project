@@ -11,7 +11,7 @@ class ImmediateFileHandler(logging.FileHandler):
         except OSError:
             pass # Failsafe in case the stream doesn't support raw file descriptors
 
-def setup_logger():
+def setup_logger(path="output.log"):
     # 1. Strip any existing loggers to prevent duplicate output streams
     root_logger = logging.getLogger()
     if root_logger.hasHandlers():
@@ -22,6 +22,6 @@ def setup_logger():
         level=logging.INFO,
         format='%(asctime)s - %(message)s',
         handlers=[
-            ImmediateFileHandler("output.log", encoding='utf-8')
+            ImmediateFileHandler(path, encoding='utf-8')
         ]
     )

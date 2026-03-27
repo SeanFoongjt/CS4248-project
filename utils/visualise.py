@@ -24,12 +24,19 @@ def save_gnn_graph(data, concepts, headline, true_label, pred_label, save_path):
     seen_pairs = set()
 
     for u, v in G.edges():
-        pair_key = tuple(sorted([u, v]))
+        # FIX 1: Safely hash the undirected pair without type-sorting conflicts
+        pair_key = frozenset([u, v])
         if pair_key in seen_pairs:
             continue
         seen_pairs.add(pair_key)
         
-        if u in concepts and v in concepts:
+        # FIX 2: Safely initialise state flags to prevent UnboundLocalError
+        is_sequential = False
+        is_conceptnet = False
+        semantic_links = []
+        
+        # Check if both nodes are mapped concept strings
+        if isinstance(u, str) and isinstance(v, str) and u in concepts and v in concepts:
             idx_u, idx_v = concepts.index(u), concepts.index(v)
             c_u = u.lower().strip().replace(" ", "_")
             c_v = v.lower().strip().replace(" ", "_")
@@ -38,7 +45,6 @@ def save_gnn_graph(data, concepts, headline, true_label, pred_label, save_path):
                 node_u_cache = global_state.conceptnet_cache.get(c_u, {})
                 node_v_cache = global_state.conceptnet_cache.get(c_v, {})
                 
-            semantic_links = []
             if c_v in node_u_cache:
                 semantic_links.extend(node_u_cache[c_v])
             if c_u in node_v_cache:
@@ -46,35 +52,43 @@ def save_gnn_graph(data, concepts, headline, true_label, pred_label, save_path):
                 
             is_conceptnet = len(semantic_links) > 0
             is_sequential = abs(idx_u - idx_v) == 1
+        else:
+            # If nodes are raw token integers (unmapped), assess their sequential adjacency safely
+            try:
+                idx_u = concepts.index(u) if u in concepts else int(u)
+                idx_v = concepts.index(v) if v in concepts else int(v)
+                is_sequential = abs(idx_u - idx_v) == 1
+            except (ValueError, TypeError):
+                is_sequential = False
             
-            rel_label = ""
-            max_weight = 0.0
+        rel_label = ""
+        max_weight = 0.0
+        
+        if is_conceptnet:
+            unique_rels = list(set([rel[0] for rel in semantic_links]))
+            sem_labels = " | ".join(unique_rels)
+            max_weight = max([rel[1] for rel in semantic_links])
             
-            if is_conceptnet:
-                unique_rels = list(set([rel[0] for rel in semantic_links]))
-                sem_labels = " | ".join(unique_rels)
-                max_weight = max([rel[1] for rel in semantic_links])
-                
-                # Logarithmic squashing for width
-                dynamic_width = 1.0 + (math.log1p(max_weight) * 0.7)
-                
-                if is_sequential:
-                    rel_label = f"Seq + {sem_labels}"
-                    both.append((u, v))
-                    both_widths.append(dynamic_width + 0.5) 
-                else:
-                    rel_label = sem_labels
-                    semantic_only.append((u, v))
-                    semantic_widths.append(dynamic_width)
-            elif is_sequential:
-                seq_only.append((u, v))
-                seq_widths.append(1.0) 
-                
-            if rel_label:
-                if max_weight > 0:
-                    edge_labels[(u, v)] = f"{rel_label}\n({max_weight:.1f})"
-                else:
-                    edge_labels[(u, v)] = rel_label
+            # Logarithmic squashing for width
+            dynamic_width = 1.0 + (math.log1p(max_weight) * 0.7)
+            
+            if is_sequential:
+                rel_label = f"Seq + {sem_labels}"
+                both.append((u, v))
+                both_widths.append(dynamic_width + 0.5) 
+            else:
+                rel_label = sem_labels
+                semantic_only.append((u, v))
+                semantic_widths.append(dynamic_width)
+        elif is_sequential:
+            seq_only.append((u, v))
+            seq_widths.append(1.0) 
+            
+        if rel_label:
+            if max_weight > 0:
+                edge_labels[(u, v)] = f"{rel_label}\n({max_weight:.1f})"
+            else:
+                edge_labels[(u, v)] = rel_label
                 
     plt.figure(figsize=(12, 8))
     
@@ -83,15 +97,12 @@ def save_gnn_graph(data, concepts, headline, true_label, pred_label, save_path):
     
     # 1. Draw Curved Edges First (so they sit behind the text)
     if seq_only:
-        # Sequential edges remain straight; LineCollection is perfectly fine here.
         nx.draw_networkx_edges(G, pos, edgelist=seq_only, width=seq_widths, alpha=0.3, style='solid', edge_color='#7f8c8d', arrows=False)
         
     if semantic_only:
-        # Enable arrows=True to unlock curves, but hide the head with arrowstyle='-'
         nx.draw_networkx_edges(G, pos, edgelist=semantic_only, width=semantic_widths, alpha=0.75, edge_color='#e67e22', connectionstyle='arc3,rad=0.25', arrows=True, arrowstyle='-')
         
     if both:
-        # Enable arrows=True to unlock curves, but hide the head with arrowstyle='-'
         nx.draw_networkx_edges(G, pos, edgelist=both, width=both_widths, alpha=0.85, edge_color='#8e44ad', connectionstyle='arc3,rad=0.15', arrows=True, arrowstyle='-')
     
     # 2. Draw Edge Labels
@@ -138,19 +149,14 @@ def track_and_log_weights(model, vocab, epoch):
     logging.info("------------------------------------\n")
 
 def plot_weight_trajectories(history, save_path):
-    # Expanded figure width to make room for the large legend
     fig, ax = plt.subplots(figsize=(12, 6))
     
-    # --- NEW: Lexicographical Terminal State Sorting ---
-    # Sort the relations based on their exact weight at the final epoch (-1) in descending order
     sorted_history = sorted(history.items(), key=lambda item: item[1][-1], reverse=True)
     
     for rel_label, weights in sorted_history:
-        # Append the exact final weight to the string label for immediate visual confirmation
         final_weight = weights[-1]
         display_label = f"{rel_label} ({final_weight:.4f})"
         
-        # marker=None ensures only the smooth line is drawn
         ax.plot(range(1, len(weights) + 1), weights, marker=None, label=display_label, linewidth=2.5)
         
     ax.set_title("Learned Semantic Prominence per Epoch", fontsize=14, fontweight='bold')
@@ -158,10 +164,8 @@ def plot_weight_trajectories(history, save_path):
     ax.set_ylabel("Effective L2 Norm (Scaled Weight)", fontsize=12)
     ax.grid(True, linestyle='--', alpha=0.7)
     
-    # Position legend outside the plot, split into 2 columns, slightly smaller font
     ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0., ncol=2, fontsize=9)
     
-    # Adjust the layout so the figure physically compresses the plot to fit the legend
     plt.tight_layout(rect=[0, 0, 0.85, 1]) 
     plt.savefig(save_path, dpi=300)
     plt.close()

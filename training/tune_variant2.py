@@ -672,7 +672,7 @@ def render_slurm_script(spec: TuningSpec, study_spec: StudySpec) -> str:
         lines.append(f"#SBATCH --constraint={profile.constraint}")
     if profile.gpus:
         lines.append(f"#SBATCH --gpus={profile.gpus}")
-    if profile.gres:
+    elif profile.gres:
         lines.append(f"#SBATCH --gres={profile.gres}")
     if profile.workers > 1:
         lines.append(f"#SBATCH --array=0-{profile.workers - 1}")

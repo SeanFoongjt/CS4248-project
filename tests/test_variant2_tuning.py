@@ -352,6 +352,7 @@ def test_submit_study_dry_run_writes_slurm_script(tmp_path):
     assert "#SBATCH --partition=cpu" in script
     assert "#SBATCH --constraint=xgph" in script
     assert "#SBATCH --gpus=1" in script
+    assert "#SBATCH --gres=" not in script
     assert "#SBATCH --array=0-2" in script
     assert "--study rb_recipe" in script
 

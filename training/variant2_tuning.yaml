@@ -17,7 +17,7 @@ slurm:
     gres: null
   transformer:
     partition: gpu
-    constraint: xgpi
+    constraint: xgph
     gpus: 1
     mem: 32G
 

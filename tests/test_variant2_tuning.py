@@ -332,7 +332,7 @@ def test_submit_study_dry_run_writes_slurm_script(tmp_path):
             "paths": {"data_path": str(data_path), "output_root": "runs_here"},
             "slurm": {
                 "default": {"partition": "cpu", "time": "01:00:00", "cpus_per_task": 2, "mem": "8G"},
-                "transformer": {"gres": "gpu:1", "workers": 3},
+                "transformer": {"gpus": "1", "constraint": "xgph", "workers": 3},
             },
             "studies": {
                 "rb_recipe": {
@@ -350,7 +350,8 @@ def test_submit_study_dry_run_writes_slurm_script(tmp_path):
 
     assert result["submitted"] is False
     assert "#SBATCH --partition=cpu" in script
-    assert "#SBATCH --gres=gpu:1" in script
+    assert "#SBATCH --constraint=xgph" in script
+    assert "#SBATCH --gpus=1" in script
     assert "#SBATCH --array=0-2" in script
     assert "--study rb_recipe" in script
 

@@ -17,7 +17,8 @@ slurm:
     gres: null
   transformer:
     partition: gpu
-    gres: gpu:1
+    constraint: xgpi
+    gpus: 1
     mem: 32G
 
 studies:

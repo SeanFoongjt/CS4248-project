@@ -23,7 +23,7 @@ CLASSICAL_MODELS = {"tfidf_nb", "tfidf_lr"}
 TRANSFORMER_MODELS = {"distilbert", "roberta"}
 SEARCH_GROUPS = {"run", "model"}
 FIXED_GROUPS = {"split", "run", "model"}
-SLURM_KEYS = {"partition", "time", "cpus_per_task", "mem", "gres", "workers", "job_name_prefix"}
+SLURM_KEYS = {"partition", "time", "cpus_per_task", "mem", "gres", "gpus", "constraint", "workers", "job_name_prefix"}
 SPLIT_KEYS = {"train_size", "val_size", "test_size", "random_state"}
 CLASSICAL_MODEL_KEYS = {
     "tfidf_nb": {"ngram_range", "min_df", "max_df", "max_features", "sublinear_tf", "norm", "alpha", "lowercase"},
@@ -82,6 +82,8 @@ class SlurmProfile:
     cpus_per_task: int = 4
     mem: str = "16G"
     gres: Optional[str] = None
+    gpus: Optional[str] = None
+    constraint: Optional[str] = None
     workers: int = 1
     job_name_prefix: str = "variant2-tune"
 
@@ -666,6 +668,10 @@ def render_slurm_script(spec: TuningSpec, study_spec: StudySpec) -> str:
     ]
     if profile.partition:
         lines.append(f"#SBATCH --partition={profile.partition}")
+    if profile.constraint:
+        lines.append(f"#SBATCH --constraint={profile.constraint}")
+    if profile.gpus:
+        lines.append(f"#SBATCH --gpus={profile.gpus}")
     if profile.gres:
         lines.append(f"#SBATCH --gres={profile.gres}")
     if profile.workers > 1:

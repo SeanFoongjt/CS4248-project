@@ -272,6 +272,9 @@ class RobertaGNNModel(nn.Module):
         x_flat = transformer_embeddings.view(batch_size * seq_len, -1)
 
         edge_attr_1d = edge_attr.view(-1) 
+        valid_edge_mask = edge_attr_1d < self.edge_embedding.num_embeddings
+        edge_attr_1d = torch.where(valid_edge_mask, edge_attr_1d, torch.zeros_like(edge_attr_1d))
+        
         raw_edge_feats = self.edge_embedding(edge_attr_1d)
         # normalized_edge_feats = F.normalize(raw_edge_feats, p=2, dim=-1)
         irf_scalars = self.irf_weights[edge_attr_1d].unsqueeze(-1)

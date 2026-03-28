@@ -2,7 +2,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 import numpy as np
@@ -52,6 +52,7 @@ class ClassicalRunConfig:
 
     model_name: str
     output_dir: str = "runs/variant2"
+    model_params: dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class TransformerRunConfig:
@@ -68,6 +69,7 @@ class TransformerRunConfig:
     max_length: int = 128
     device: str = "auto"
     seed: int = 42
+    pretrained_name: Optional[str] = None
 
 VARIANT2_RECIPES = (
     ContextRecipe(name="headline_section", needs_section=True),
@@ -111,6 +113,14 @@ def load_jsonl(path: str | Path) -> pd.DataFrame:
     df = df.copy()
     df["row_id"] = np.arange(len(df))
     return df
+
+def load_variant2_data(path: str | Path, max_rows: Optional[int] = None) -> pd.DataFrame:
+    """Load and prepare the Variant 2 dataframe once for repeated runs."""
+
+    raw_df = load_jsonl(path)
+    if max_rows is not None:
+        raw_df = raw_df.iloc[:max_rows].copy().reset_index(drop=True)
+    return prepare_variant2_frame(raw_df)
 
 def _is_missing(value: Any) -> bool:
     """Return True when a value should be treated as missing."""
@@ -319,26 +329,33 @@ def compute_metrics(y_true: Iterable[int], y_pred: Iterable[int]) -> dict[str, f
         "f1": float(bin_f1),
     }
 
-def build_classical_model(name: str):
+def build_classical_model(name: str, model_params: Optional[dict[str, Any]] = None):
     """Return one TF-IDF baseline model wrapper."""
 
+    model_params = model_params or {}
     if name == "tfidf_nb":
-        return TfidfNbModel(TfidfNbConfig())
+        return TfidfNbModel(TfidfNbConfig(**model_params))
     if name == "tfidf_lr":
-        return TfidfLogRegModel(TfidfLrConfig())
+        return TfidfLogRegModel(TfidfLrConfig(**model_params))
     raise ValueError(f"Unknown classical model: {name}")
 
-def build_transformer_wrapper(name: str, max_length: int):
+def build_transformer_wrapper(name: str, max_length: int, pretrained_name: Optional[str] = None):
     """Return one transformer wrapper."""
 
     if name == "distilbert":
         from models.distilbert import DistilBertConfig, DistilBertSarcasmModel
 
-        return DistilBertSarcasmModel(DistilBertConfig(max_length=max_length))
+        kwargs = {"max_length": max_length}
+        if pretrained_name:
+            kwargs["pretrained_name"] = pretrained_name
+        return DistilBertSarcasmModel(DistilBertConfig(**kwargs))
     if name == "roberta":
         from models.roberta import RobertaConfig, RobertaSarcasmModel
 
-        return RobertaSarcasmModel(RobertaConfig(max_length=max_length))
+        kwargs = {"max_length": max_length}
+        if pretrained_name:
+            kwargs["pretrained_name"] = pretrained_name
+        return RobertaSarcasmModel(RobertaConfig(**kwargs))
     raise ValueError(f"Unknown transformer model: {name}")
 
 def save_json(path: str | Path, obj: dict[str, Any]) -> None:
@@ -368,7 +385,7 @@ def run_classical_recipe(
     split_map = split_frame(recipe_frame, split_cfg)
     out_dir = Path(cfg.output_dir) / cfg.model_name / recipe.name
     save_split_files(out_dir / "splits", split_map)
-    wrapper = build_classical_model(cfg.model_name)
+    wrapper = build_classical_model(cfg.model_name, model_params=cfg.model_params)
     pipe = wrapper.build_pipeline()
     train_df = split_map["train"]
     val_df = split_map["val"]
@@ -382,6 +399,8 @@ def run_classical_recipe(
         "n_train": int(len(train_df)),
         "n_val": int(len(val_df)),
         "n_test": int(len(test_df)),
+        "run_config": asdict(cfg),
+        "model_config": asdict(wrapper.cfg),
         "val": compute_metrics(val_df["label"], val_pred),
         "test": compute_metrics(test_df["label"], test_pred),
     }
@@ -459,6 +478,7 @@ def run_transformer_recipe(
     recipe: ContextRecipe,
     cfg: TransformerRunConfig,
     split_cfg: SplitConfig,
+    epoch_callback: Optional[Callable[[int, dict[str, Any]], None]] = None,
 ) -> dict[str, Any]:
     """Train and evaluate one transformer on one recipe."""
 
@@ -467,7 +487,11 @@ def run_transformer_recipe(
     out_dir = Path(cfg.output_dir) / cfg.model_name / recipe.name
     save_split_files(out_dir / "splits", split_map)
     device = pick_device(cfg.device)
-    wrapper = build_transformer_wrapper(cfg.model_name, max_length=cfg.max_length).to(device)
+    wrapper = build_transformer_wrapper(
+        cfg.model_name,
+        max_length=cfg.max_length,
+        pretrained_name=cfg.pretrained_name,
+    ).to(device)
     train_ds = SimpleTextDataset(
         wrapper.make_dataset(split_map["train"]["text"].tolist(), split_map["train"]["label"].tolist())
     )
@@ -507,6 +531,9 @@ def run_transformer_recipe(
     )
     history: list[dict[str, Any]] = []
     best_state: Optional[dict[str, Any]] = None
+    best_epoch: Optional[int] = None
+    best_val_loss: Optional[float] = None
+    best_val_metrics: Optional[dict[str, float]] = None
     best_metric = -1.0
     for ep in range(cfg.epochs):
         train_loss = train_one_epoch(wrapper, train_loader, optimizer, scheduler, device)
@@ -518,8 +545,13 @@ def run_transformer_recipe(
             **{f"val_{k}": v for k, v in val_metrics.items()},
         }
         history.append(row)
+        if epoch_callback is not None:
+            epoch_callback(ep + 1, row)
         if val_metrics["macro_f1"] > best_metric:
             best_metric = val_metrics["macro_f1"]
+            best_epoch = ep + 1
+            best_val_loss = val_loss
+            best_val_metrics = val_metrics
             best_state = {k: v.detach().cpu().clone() for k, v in wrapper.model.state_dict().items()}
     if best_state is None:
         raise RuntimeError("No checkpoint was saved during training")
@@ -534,7 +566,11 @@ def run_transformer_recipe(
         "n_train": int(len(split_map["train"])),
         "n_val": int(len(split_map["val"])),
         "n_test": int(len(split_map["test"])),
+        "best_epoch": best_epoch,
+        "val_loss": best_val_loss,
+        "val": best_val_metrics,
         "train_config": asdict(cfg),
+        "model_config": asdict(wrapper.cfg),
         "history": history,
         "test_loss": test_loss,
         "test": test_metrics,
@@ -579,10 +615,7 @@ def run_variant2_suite(
     The same recipe-specific subset and split logic is used for all models.
     """
 
-    raw_df = load_jsonl(data_path)
-    if max_rows is not None:
-        raw_df = raw_df.iloc[:max_rows].copy().reset_index(drop=True)
-    prep_df = prepare_variant2_frame(raw_df)
+    prep_df = load_variant2_data(data_path, max_rows=max_rows)
     results: list[dict[str, Any]] = []
     for recipe in VARIANT2_RECIPES:
         cls_df = build_recipe_frame(prep_df, recipe, family="classical")

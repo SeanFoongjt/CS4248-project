@@ -7,3 +7,5 @@ __pycache__/
 .vscode/
 .DS_Store
 Thumbs.db
+runs/variant2_tuning/
+*.sbatch

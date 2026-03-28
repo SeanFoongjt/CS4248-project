@@ -1,1 +1,11 @@
 nltk
+numpy
+pandas
+optuna
+psycopg2-binary
+pyyaml
+pytest
+scikit-learn
+spacy
+torch
+transformers

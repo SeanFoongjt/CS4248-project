@@ -63,23 +63,45 @@ def preprocess_description(text: str, masks: list = ENTITY_MASKS):
     return processed_text
 
 
-def preprocess_description_from_doc(doc, masks=ENTITY_MASKS):
+def preprocess_description_from_doc(doc, masks: list = ENTITY_MASKS):
     """
     Modified version that accepts a spaCy Doc instead of a string.
     Used for efficiency when running on SoC.
     """
-    text = doc.text
-
-    text = re.sub(r'^[A-Z\s,.]+—', '', text).strip()
+    # 1. Get original text and identify what we are removing
+    original_text = doc.text
+    # Regex to find the dateline (e.g., "CHICAGO—")
+    dateline_match = re.match(r'^[A-Z\s,.]+—', original_text)
     
-    sentences = list(doc.sents)
-    processed_text = " ".join([s.text for s in sentences])
+    offset = 0
+    cleaned_text = original_text
+    
+    if dateline_match:
+        dateline_str = dateline_match.group(0)
+        offset = len(dateline_str)
+        cleaned_text = original_text[offset:].strip()
+        # Update offset to account for potential leading whitespace removal from .strip()
+        offset = len(original_text) - len(cleaned_text)
+
+    # 2. Convert string to a list of characters for easy slicing/replacement
+    # We work backwards so that replacing text doesn't ruin future indices
+    chars = list(cleaned_text)
     
     for ent in reversed(doc.ents):
-        if ent.label_ in masks and ent.end <= sentences[-1].end:
-            processed_text = (processed_text[:ent.start_char] + f"[{ent.label_}]" + processed_text[ent.end_char:])
+        # Only mask if the entity type is in our list
+        if ent.label_ in masks:
+            # Adjust the start and end positions based on what we cut from the front
+            start = ent.start_char - offset
+            end = ent.end_char - offset
+            
+            # Only replace if the entity is actually part of the remaining text
+            if start >= 0:
+                # Replace the slice with the mask tag
+                chars[start:end] = list(f"[{ent.label_}]")
 
-    return re.sub(r'\s+', ' ', processed_text).strip()
+    # 3. Final cleanup of whitespace
+    final_text = "".join(chars)
+    return re.sub(r'\s+', ' ', final_text).strip()
 
 
 def preprocess_for_bow(text: str, remove_punctuation: bool = True,
@@ -126,7 +148,7 @@ def preprocess_for_bow(text: str, remove_punctuation: bool = True,
 
     return " ".join(tokens)
 
-# for slurming on soc
+
 if __name__ == "__main__":
     import pandas as pd
 
@@ -138,9 +160,8 @@ if __name__ == "__main__":
     df['preprocessed_article_section'] = df['article_section'].apply(preprocess_article_section)
 
     descriptions = df['description'].astype(str).tolist()
-    doc_stream = nlp.pipe(descriptions, n_process=-1, batch_size=500)
+    doc_stream = nlp.pipe(descriptions, n_process=1, batch_size=16)
     df['preprocessed_description'] = [preprocess_description_from_doc(doc) for doc in doc_stream]
 
-    # 3. Save Output
     output_file = 'Sarcasm_Headlines_Preprocessed.csv'
     df.to_csv(output_file, index=False)

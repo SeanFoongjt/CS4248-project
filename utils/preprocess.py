@@ -35,6 +35,7 @@ def preprocess_article_section(entry, mappings = SECTION_MAPPINGS):
 
     # remove duplicates
     standardized = list(set(standardized))
+    standardized.sort()
     
     return ", ".join(standardized)
 

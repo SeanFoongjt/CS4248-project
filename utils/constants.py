@@ -32,7 +32,6 @@ SECTION_MAPPINGS = {
     "lifestyle": "lifestyle",
     "world": "world",
     "work": "work",
-    "animals": "animals",
     "food": "lifestyle",
     "family": "family",
     "death": "health",

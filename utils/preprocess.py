@@ -152,7 +152,7 @@ def preprocess_for_bow(text: str, remove_punctuation: bool = True,
 if __name__ == "__main__":
     import pandas as pd
 
-    input_file = 'Sarcasm_Headlines_Dataset_With_Metadata.json'
+    input_file = 'data/Sarcasm_Headlines_Dataset_With_Metadata.json'
     
     df = pd.read_json(input_file, lines=True)
     df = df.fillna("")

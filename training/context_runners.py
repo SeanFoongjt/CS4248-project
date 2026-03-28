@@ -16,8 +16,6 @@ from .context_common import (
     SplitConfig,
     TransformerRunConfig,
 )
-from models.tfidf_lr import TfidfLogRegModel, TfidfLrConfig
-from models.tfidf_nb import TfidfNbConfig, TfidfNbModel
 
 
 def build_classical_model(name: str, model_params: Optional[dict[str, Any]] = None):
@@ -25,8 +23,12 @@ def build_classical_model(name: str, model_params: Optional[dict[str, Any]] = No
 
     params = model_params or {}
     if name == "tfidf_nb":
+        from models.tfidf_nb import TfidfNbConfig, TfidfNbModel
+
         return TfidfNbModel(TfidfNbConfig(**params))
     if name == "tfidf_lr":
+        from models.tfidf_lr import TfidfLogRegModel, TfidfLrConfig
+
         return TfidfLogRegModel(TfidfLrConfig(**params))
     raise ValueError(f"Unknown classical model: {name}")
 

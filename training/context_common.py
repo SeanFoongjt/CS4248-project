@@ -9,8 +9,6 @@ from typing import Any, Iterable, Optional
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.metrics import accuracy_score, precision_recall_fscore_support
-from sklearn.model_selection import train_test_split
 
 
 @dataclass(frozen=True)
@@ -132,6 +130,7 @@ def _safe_stratify(labels: np.ndarray) -> Optional[np.ndarray]:
 
 def split_frame(df: pd.DataFrame, cfg: SplitConfig) -> dict[str, pd.DataFrame]:
     """Create train/val/test splits."""
+    from sklearn.model_selection import train_test_split
 
     total = cfg.train_size + cfg.val_size + cfg.test_size
     if abs(total - 1.0) > 1e-8:
@@ -162,6 +161,7 @@ def split_frame(df: pd.DataFrame, cfg: SplitConfig) -> dict[str, pd.DataFrame]:
 
 def compute_metrics(y_true: Iterable[int], y_pred: Iterable[int]) -> dict[str, float]:
     """Compute the main classification metrics for binary sarcasm detection."""
+    from sklearn.metrics import accuracy_score, precision_recall_fscore_support
 
     y_true = list(y_true)
     y_pred = list(y_pred)

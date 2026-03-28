@@ -16,8 +16,8 @@ slurm:
   classical:
     gres: null
   transformer:
-    partition: gpu
-    gpus: a100-80
+    partition: gpu-long
+    gpus: h100-96
     mem: 32G
 
 studies:

@@ -356,6 +356,8 @@ def test_submit_study_dry_run_writes_slurm_script(tmp_path):
     assert "#SBATCH --gres=" not in script
     assert "#SBATCH --array=0-2" in script
     assert script.index("set -euo pipefail") > script.index("#SBATCH --array=0-2")
+    assert 'source .venv/bin/activate' in script
+    assert 'torch.cuda.is_available()' in script
     assert "--study rb_recipe" in script
 
 

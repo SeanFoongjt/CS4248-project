@@ -675,12 +675,13 @@ def render_slurm_script(spec: TuningSpec, study_spec: StudySpec) -> str:
         lines.append(f"#SBATCH --gres={profile.gres}")
     if profile.workers > 1:
         lines.append(f"#SBATCH --array=0-{profile.workers - 1}")
+    lines.extend(["", "set -euo pipefail", "", 'cd "${SLURM_SUBMIT_DIR:-.}"', "source .venv/bin/activate", ""])
+    if study_spec.family == "transformer":
+        lines.append(
+            'python -c "import torch; assert torch.cuda.is_available(), \'CUDA not available\'; print(torch.cuda.get_device_name(0))"'
+        )
     lines.extend(
         [
-            "",
-            "set -euo pipefail",
-            "",
-            'cd "${SLURM_SUBMIT_DIR:-.}"',
             f"python -m training.tune_variant2 worker --config {shlex.quote(spec.config_path)} --study {shlex.quote(study_spec.name)}",
             "",
         ]

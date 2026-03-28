@@ -134,6 +134,7 @@ def run_transformer_recipe(
     cfg: TransformerRunConfig,
     split_cfg: SplitConfig,
     epoch_callback: Optional[Callable[[int, dict[str, Any]], None]] = None,
+    save_checkpoint: bool = True,
 ) -> dict[str, Any]:
     """Train and evaluate one transformer on one recipe."""
 
@@ -151,6 +152,7 @@ def run_transformer_recipe(
         build_transformer_wrapper_fn=build_transformer_wrapper,
         clip_grad_norm=nn.utils.clip_grad_norm_,
         epoch_callback=epoch_callback,
+        save_checkpoint=save_checkpoint,
     )
 
 

@@ -213,6 +213,9 @@ studies:
       run:
         eval_batch_size: 64
         seed: 42
+        epochs: 20
+        early_stopping_patience: 3
+        early_stopping_min_delta: 0.001
       model:
         pretrained_name: distilbert-base-uncased
     search_space:
@@ -227,9 +230,6 @@ studies:
         weight_decay:
           type: categorical
           choices: [0.0, 0.01, 0.05]
-        epochs:
-          type: categorical
-          choices: [3, 4]
         warmup_ratio:
           type: categorical
           choices: [0.06, 0.1, 0.15]
@@ -252,6 +252,9 @@ studies:
       run:
         eval_batch_size: 64
         seed: 42
+        epochs: 20
+        early_stopping_patience: 3
+        early_stopping_min_delta: 0.001
       model:
         pretrained_name: distilbert-base-uncased
     search_space:
@@ -266,9 +269,6 @@ studies:
         weight_decay:
           type: categorical
           choices: [0.0, 0.01, 0.05]
-        epochs:
-          type: categorical
-          choices: [3, 4]
         warmup_ratio:
           type: categorical
           choices: [0.06, 0.1, 0.15]
@@ -291,6 +291,9 @@ studies:
       run:
         eval_batch_size: 64
         seed: 42
+        epochs: 20
+        early_stopping_patience: 3
+        early_stopping_min_delta: 0.001
       model:
         pretrained_name: distilbert-base-uncased
     search_space:
@@ -305,9 +308,6 @@ studies:
         weight_decay:
           type: categorical
           choices: [0.0, 0.01, 0.05]
-        epochs:
-          type: categorical
-          choices: [3, 4]
         warmup_ratio:
           type: categorical
           choices: [0.06, 0.1, 0.15]
@@ -330,9 +330,11 @@ studies:
       run:
         eval_batch_size: 32
         weight_decay: 0.01
-        epochs: 3
         warmup_ratio: 0.1
         seed: 42
+        early_stopping_patience: 3
+        early_stopping_min_delta: 0.001
+        epochs: 20
       model:
         pretrained_name: roberta-base
         dropout: 0.1
@@ -364,9 +366,11 @@ studies:
       run:
         eval_batch_size: 32
         weight_decay: 0.01
-        epochs: 3
+        epochs: 20
         warmup_ratio: 0.1
         seed: 42
+        early_stopping_patience: 3
+        early_stopping_min_delta: 0.001
       model:
         pretrained_name: roberta-base
         dropout: 0.1
@@ -398,9 +402,11 @@ studies:
       run:
         eval_batch_size: 32
         weight_decay: 0.01
-        epochs: 3
+        epochs: 20
         warmup_ratio: 0.1
         seed: 42
+        early_stopping_patience: 3
+        early_stopping_min_delta: 0.001
       model:
         pretrained_name: roberta-base
         dropout: 0.1

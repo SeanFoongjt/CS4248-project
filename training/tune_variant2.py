@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import shlex
+import shutil
 import subprocess
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -14,6 +15,7 @@ import yaml
 from optuna.pruners import MedianPruner, NopPruner
 from optuna.samplers import TPESampler
 from optuna.study import MaxTrialsCallback
+from optuna.trial import FixedTrial
 from optuna.trial import TrialState
 
 from training import variant2_context as v2
@@ -52,6 +54,8 @@ TRANSFORMER_RUN_KEYS = {
     "max_length",
     "device",
     "seed",
+    "early_stopping_patience",
+    "early_stopping_min_delta",
 }
 TRANSFORMER_MODEL_KEYS = {
     "distilbert": {"pretrained_name"},
@@ -490,8 +494,67 @@ def _study_summary(study, study_spec: StudySpec) -> dict[str, Any]:
         "best_params": best_trial.params,
         "best_validation_metric": best_trial.user_attrs.get("val_macro_f1", best_trial.value),
         "corresponding_test_metric": best_trial.user_attrs.get("test_macro_f1"),
-        "artifact_path": best_trial.user_attrs.get("artifact_path"),
+        "artifact_path": study.user_attrs.get("best_model_path", best_trial.user_attrs.get("artifact_path")),
     }
+
+
+def _best_model_root(spec: TuningSpec, study_spec: StudySpec) -> Path:
+    return _study_output_dir(spec, study_spec) / "best_model"
+
+
+def _best_model_checkpoint_path(spec: TuningSpec, study_spec: StudySpec) -> Path:
+    return _best_model_root(spec, study_spec) / study_spec.model / study_spec.recipe / "checkpoint"
+
+
+def _best_model_metadata_path(spec: TuningSpec, study_spec: StudySpec) -> Path:
+    return _best_model_root(spec, study_spec) / "materialization.json"
+
+
+def _materialize_best_transformer_trial(spec: TuningSpec, study_spec: StudySpec, study) -> Optional[dict[str, Any]]:
+    if study_spec.family != "transformer":
+        return None
+    completed_trials = [trial for trial in study.trials if trial.state == TrialState.COMPLETE and trial.value is not None]
+    if not completed_trials:
+        return None
+
+    best_trial = study.best_trial
+    checkpoint_path = _best_model_checkpoint_path(spec, study_spec)
+    metadata_path = _best_model_metadata_path(spec, study_spec)
+    if metadata_path.exists() and checkpoint_path.exists():
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if metadata.get("best_trial_id") == best_trial.number:
+            study.set_user_attr("best_model_path", str(checkpoint_path))
+            study.set_user_attr("best_model_trial_id", best_trial.number)
+            return metadata
+
+    best_model_root = _best_model_root(spec, study_spec)
+    if best_model_root.exists():
+        shutil.rmtree(best_model_root)
+    best_model_root.mkdir(parents=True, exist_ok=True)
+
+    resolved, _ = resolve_trial_parameters(study_spec, FixedTrial(best_trial.params))
+    split_cfg, run_cfg = build_trial_configs(study_spec, spec, resolved, best_model_root)
+    recipe_frame = get_cached_recipe_frame(spec, study_spec)
+    metrics = v2.run_transformer_recipe(
+        recipe_frame,
+        v2._recipe_by_name(study_spec.recipe),
+        cfg=run_cfg,
+        split_cfg=split_cfg,
+        save_checkpoint=True,
+    )
+    metadata = {
+        "best_trial_id": best_trial.number,
+        "best_model_path": str(checkpoint_path),
+        "metrics_path": str(best_model_root / study_spec.model / study_spec.recipe / "metrics.json"),
+        "resolved": resolved,
+        "val_macro_f1": float(metrics["val"]["macro_f1"]),
+        "test_macro_f1": float(metrics["test"]["macro_f1"]),
+    }
+    v2.save_json(metadata_path, metadata)
+    study.set_user_attr("best_model_path", str(checkpoint_path))
+    study.set_user_attr("best_model_trial_id", best_trial.number)
+    study.set_user_attr("best_model_metrics_path", metadata["metrics_path"])
+    return metadata
 
 
 def _study_export_dict(spec: TuningSpec, study_spec: StudySpec) -> dict[str, Any]:
@@ -594,6 +657,7 @@ def run_trial(spec: TuningSpec, study_spec: StudySpec, trial: optuna.Trial) -> f
                 cfg=run_cfg,
                 split_cfg=split_cfg,
                 epoch_callback=epoch_callback,
+                save_checkpoint=False,
             )
         objective_value = float(metrics["val"]["macro_f1"])
         metrics_snapshot = {
@@ -633,6 +697,7 @@ def run_worker(spec: TuningSpec, study_spec: StudySpec) -> dict[str, Any]:
             callbacks=[max_trials_callback],
             gc_after_trial=True,
         )
+    _materialize_best_transformer_trial(spec, study_spec, study)
     return export_study_artifacts(spec, study_spec, study)
 
 

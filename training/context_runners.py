@@ -189,6 +189,7 @@ def run_transformer_recipe(
     build_transformer_wrapper_fn: Callable[..., Any],
     clip_grad_norm: Callable[..., Any],
     epoch_callback: Optional[Callable[[int, dict[str, Any]], None]] = None,
+    save_checkpoint: bool = True,
 ) -> dict[str, Any]:
     """Train and evaluate one transformer on one recipe."""
 
@@ -232,9 +233,13 @@ def run_transformer_recipe(
     best_val_metrics: Optional[dict[str, float]] = None
     best_train_loss: Optional[float] = None
     best_metric = -1.0
+    epochs_trained = 0
+    no_improvement_epochs = 0
+    stopped_early = False
     for ep in range(cfg.epochs):
         train_loss = train_one_epoch(wrapper, train_loader, optimizer, scheduler, device, clip_grad_norm)
         val_loss, val_metrics = evaluate_transformer(wrapper, val_loader, device, compute_metrics)
+        epochs_trained = ep + 1
         row = {
             "epoch": ep + 1,
             "train_loss": train_loss,
@@ -245,21 +250,28 @@ def run_transformer_recipe(
         history.append(row)
         if epoch_callback is not None:
             epoch_callback(ep + 1, row)
-        if val_metrics["macro_f1"] > best_metric:
+        if val_metrics["macro_f1"] > best_metric + cfg.early_stopping_min_delta:
             best_metric = val_metrics["macro_f1"]
             best_epoch = ep + 1
             best_train_loss = train_loss
             best_val_loss = val_loss
             best_val_metrics = val_metrics
             best_state = {key: value.detach().cpu().clone() for key, value in wrapper.model.state_dict().items()}
+            no_improvement_epochs = 0
+        else:
+            no_improvement_epochs += 1
+            if cfg.early_stopping_patience is not None and no_improvement_epochs >= cfg.early_stopping_patience:
+                stopped_early = True
+                break
     if best_state is None:
         raise RuntimeError("No checkpoint was saved during training")
     wrapper.model.load_state_dict(best_state)
-    if hasattr(wrapper, "save_pretrained"):
-        wrapper.save_pretrained(out_dir / "checkpoint")
-    else:
-        wrapper.model.save_pretrained(out_dir / "checkpoint")
-    wrapper.tokenizer.save_pretrained(out_dir / "checkpoint")
+    if save_checkpoint:
+        if hasattr(wrapper, "save_pretrained"):
+            wrapper.save_pretrained(out_dir / "checkpoint")
+        else:
+            wrapper.model.save_pretrained(out_dir / "checkpoint")
+        wrapper.tokenizer.save_pretrained(out_dir / "checkpoint")
     test_loss, test_metrics = evaluate_transformer(wrapper, test_loader, device, compute_metrics)
     metrics = {
         "model": cfg.model_name,
@@ -269,6 +281,8 @@ def run_transformer_recipe(
         "n_val": int(len(split_map["val"])),
         "n_test": int(len(split_map["test"])),
         "best_epoch": best_epoch,
+        "epochs_trained": epochs_trained,
+        "stopped_early": stopped_early,
         "train_loss": best_train_loss,
         "val_loss": best_val_loss,
         "val_accuracy": None if best_val_metrics is None else best_val_metrics["accuracy"],

@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 import torch
 import torch.nn as nn
+from training import context_runners as runners
 from training import variant2_context as v2
 
 
@@ -285,6 +286,46 @@ def test_transformer_recipe_records_collaborator_metrics_and_clips_gradients(tmp
     assert clip_calls["count"] > 0
     assert (tmp_path / "roberta" / "headline_only" / "checkpoint" / "model_state.pt").exists()
     assert (tmp_path / "roberta" / "headline_only" / "checkpoint" / "tokenizer.json").exists()
+
+
+def test_transformer_recipe_stops_early_on_plateau(tmp_path, monkeypatch):
+    monkeypatch.setattr(v2, "_load_preprocessors", fake_load_preprocessors)
+    monkeypatch.setattr(v2, "build_transformer_wrapper", lambda *args, **kwargs: DummyTransformerWrapper())
+    df = v2.prepare_variant2_frame(small_df())
+    recipe = v2.ContextRecipe(name="headline_only")
+    frame = v2.build_recipe_frame(df, recipe, family="transformer")
+
+    eval_results = iter(
+        [
+            (0.55, {"accuracy": 0.70, "macro_precision": 0.70, "macro_recall": 0.70, "macro_f1": 0.70, "precision": 0.70, "recall": 0.70, "f1": 0.70}),
+            (0.60, {"accuracy": 0.75, "macro_precision": 0.75, "macro_recall": 0.75, "macro_f1": 0.75, "precision": 0.75, "recall": 0.75, "f1": 0.75}),
+            (0.61, {"accuracy": 0.74, "macro_precision": 0.74, "macro_recall": 0.74, "macro_f1": 0.75, "precision": 0.74, "recall": 0.74, "f1": 0.74}),
+            (0.62, {"accuracy": 0.73, "macro_precision": 0.73, "macro_recall": 0.73, "macro_f1": 0.75, "precision": 0.73, "recall": 0.73, "f1": 0.73}),
+            (0.58, {"accuracy": 0.72, "macro_precision": 0.72, "macro_recall": 0.72, "macro_f1": 0.72, "precision": 0.72, "recall": 0.72, "f1": 0.72}),
+        ]
+    )
+
+    monkeypatch.setattr(runners, "train_one_epoch", lambda *args, **kwargs: 0.4)
+    monkeypatch.setattr(runners, "evaluate_transformer", lambda *args, **kwargs: next(eval_results))
+
+    metrics = v2.run_transformer_recipe(
+        frame,
+        recipe,
+        cfg=v2.default_transformer_run_config(
+            model_name="roberta",
+            output_dir=str(tmp_path),
+            device="cpu",
+            epochs=6,
+            early_stopping_patience=2,
+            early_stopping_min_delta=0.001,
+        ),
+        split_cfg=v2.SplitConfig(),
+    )
+
+    assert metrics["stopped_early"] is True
+    assert metrics["epochs_trained"] == 4
+    assert metrics["best_epoch"] == 2
+    assert len(metrics["history"]) == 4
 
 
 def test_load_jsonl_round_trip(tmp_path):

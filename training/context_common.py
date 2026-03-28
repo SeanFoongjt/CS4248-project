@@ -54,6 +54,8 @@ class TransformerRunConfig:
     max_length: int = 128
     device: str = "auto"
     seed: int = 42
+    early_stopping_patience: Optional[int] = None
+    early_stopping_min_delta: float = 0.0
     pretrained_name: Optional[str] = None
     dropout: Optional[float] = None
 

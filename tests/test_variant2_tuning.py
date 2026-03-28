@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import optuna
 import pandas as pd
 import pytest
+import torch
+import torch.nn as nn
 import yaml
 from optuna.pruners import MedianPruner, NopPruner
 from optuna.trial import FixedTrial
@@ -112,6 +115,81 @@ def write_config(tmp_path: Path, payload: dict) -> Path:
 def clear_caches() -> None:
     tune.PREPARED_FRAME_CACHE.clear()
     tune.RECIPE_FRAME_CACHE.clear()
+
+
+class DummyTextDataset(torch.utils.data.Dataset):
+    def __init__(self, texts, labels):
+        self.items = []
+        for text, label in zip(texts, labels):
+            token = float(len(text.split()))
+            self.items.append(
+                {
+                    "input_ids": torch.tensor([token], dtype=torch.float32),
+                    "attention_mask": torch.tensor([1.0], dtype=torch.float32),
+                    "labels": torch.tensor(label, dtype=torch.long),
+                }
+            )
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, idx):
+        return self.items[idx]
+
+
+class DummyTokenizer:
+    def save_pretrained(self, out_dir):
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        (Path(out_dir) / "tokenizer.json").write_text("{}", encoding="utf-8")
+
+
+class DummyTransformerModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = nn.Linear(1, 2)
+        self.loss_fn = nn.CrossEntropyLoss()
+
+    def forward(self, input_ids, attention_mask=None, labels=None):
+        logits = self.linear(input_ids.float())
+        loss = self.loss_fn(logits, labels) if labels is not None else None
+        return type("DummyOutput", (), {"loss": loss, "logits": logits})
+
+
+@dataclass
+class DummyCfg:
+    pretrained_name: str = "dummy"
+    max_length: int = 64
+    num_labels: int = 2
+    dropout: float = 0.1
+
+
+class DummyTransformerWrapper:
+    def __init__(self):
+        self.cfg = DummyCfg()
+        self.model = DummyTransformerModel()
+        self.tokenizer = DummyTokenizer()
+        self.collator = self._collate
+
+    def make_dataset(self, texts, labels=None):
+        return DummyTextDataset(texts, labels)
+
+    def _collate(self, batch):
+        return {
+            "input_ids": torch.stack([item["input_ids"] for item in batch]),
+            "attention_mask": torch.stack([item["attention_mask"] for item in batch]),
+            "labels": torch.stack([item["labels"] for item in batch]),
+        }
+
+    def forward_batch(self, batch):
+        return self.model(**batch)
+
+    def to(self, device):
+        self.model.to(device)
+        return self
+
+    def save_pretrained(self, out_dir):
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        torch.save(self.model.state_dict(), Path(out_dir) / "model_state.pt")
 
 
 def test_load_tuning_spec_resolves_paths_and_storage(tmp_path):
@@ -246,7 +324,13 @@ def test_build_trial_configs_for_both_families(tmp_path):
                     "recipe": "headline_only",
                     "n_trials": 1,
                     "fixed": {
-                        "run": {"batch_size": 4, "device": "cpu", "seed": 11},
+                        "run": {
+                            "batch_size": 4,
+                            "device": "cpu",
+                            "seed": 11,
+                            "early_stopping_patience": 2,
+                            "early_stopping_min_delta": 0.001,
+                        },
                         "model": {"pretrained_name": "roberta-base", "dropout": 0.2},
                     },
                 },
@@ -274,6 +358,8 @@ def test_build_trial_configs_for_both_families(tmp_path):
     assert rb_cfg.pretrained_name == "roberta-base"
     assert rb_cfg.batch_size == 4
     assert rb_cfg.dropout == 0.2
+    assert rb_cfg.early_stopping_patience == 2
+    assert rb_cfg.early_stopping_min_delta == 0.001
 
 
 def test_roberta_tuning_accepts_headline_only_and_dropout(tmp_path):
@@ -426,3 +512,60 @@ def test_worker_runs_and_resumes_for_classical_study(tmp_path, monkeypatch):
     assert len(aggregate) == 1
     assert (Path(spec.paths.output_root) / "studies_summary.json").exists()
     assert (Path(spec.paths.output_root) / "studies_summary.csv").exists()
+
+
+def test_transformer_tuning_saves_only_best_model_checkpoint(tmp_path, monkeypatch):
+    clear_caches()
+    monkeypatch.setattr(v2, "_load_preprocessors", fake_load_preprocessors)
+    monkeypatch.setattr(v2, "build_transformer_wrapper", lambda *args, **kwargs: DummyTransformerWrapper())
+    data_path = write_jsonl(tmp_path)
+    config_path = write_config(
+        tmp_path,
+        {
+            "storage": {"url": "sqlite:///optuna_transformer.db", "study_prefix": "smoke"},
+            "paths": {"data_path": str(data_path), "output_root": "runs_out"},
+            "studies": {
+                "rb_recipe": {
+                    "model": "roberta",
+                    "recipe": "headline_only",
+                    "n_trials": 2,
+                    "max_rows": 10,
+                    "fixed": {
+                        "split": {
+                            "train_size": 0.6,
+                            "val_size": 0.2,
+                            "test_size": 0.2,
+                            "random_state": 42,
+                        },
+                        "run": {
+                            "batch_size": 2,
+                            "eval_batch_size": 2,
+                            "device": "cpu",
+                            "epochs": 2,
+                            "max_length": 64,
+                            "seed": 42,
+                        },
+                        "model": {"dropout": 0.1},
+                    },
+                    "search_space": {
+                        "run": {
+                            "lr": {"type": "categorical", "choices": [0.001, 0.002]},
+                        }
+                    },
+                }
+            },
+        },
+    )
+    spec = tune.load_tuning_spec(config_path)
+    study_spec = spec.studies["rb_recipe"]
+
+    summary = tune.run_worker(spec, study_spec)
+    out_dir = Path(spec.paths.output_root) / study_spec.name
+    best_checkpoint = out_dir / "best_model" / "roberta" / "headline_only" / "checkpoint" / "model_state.pt"
+
+    assert summary["best_trial_id"] is not None
+    assert summary["artifact_path"] == str(best_checkpoint.parent)
+    assert best_checkpoint.exists()
+    assert (best_checkpoint.parent / "tokenizer.json").exists()
+    assert (out_dir / "best_model" / "materialization.json").exists()
+    assert not list(out_dir.glob("trials/trial_*/roberta/headline_only/checkpoint/model_state.pt"))

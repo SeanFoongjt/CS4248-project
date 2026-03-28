@@ -243,11 +243,11 @@ def test_build_trial_configs_for_both_families(tmp_path):
                 },
                 "roberta_recipe": {
                     "model": "roberta",
-                    "recipe": "headline_section_description",
+                    "recipe": "headline_only",
                     "n_trials": 1,
                     "fixed": {
                         "run": {"batch_size": 4, "device": "cpu", "seed": 11},
-                        "model": {"pretrained_name": "roberta-base"},
+                        "model": {"pretrained_name": "roberta-base", "dropout": 0.2},
                     },
                 },
             },
@@ -273,6 +273,35 @@ def test_build_trial_configs_for_both_families(tmp_path):
     assert isinstance(rb_split, v2.SplitConfig)
     assert rb_cfg.pretrained_name == "roberta-base"
     assert rb_cfg.batch_size == 4
+    assert rb_cfg.dropout == 0.2
+
+
+def test_roberta_tuning_accepts_headline_only_and_dropout(tmp_path):
+    data_path = write_jsonl(tmp_path)
+    config_path = write_config(
+        tmp_path,
+        {
+            "storage": {"url": "sqlite:///study.db"},
+            "paths": {"data_path": str(data_path)},
+            "studies": {
+                "rb_recipe": {
+                    "model": "roberta",
+                    "recipe": "headline_only",
+                    "n_trials": 1,
+                    "search_space": {
+                        "model": {
+                            "dropout": {"type": "float", "low": 0.1, "high": 0.3},
+                        }
+                    },
+                }
+            },
+        },
+    )
+
+    spec = tune.load_tuning_spec(config_path)
+
+    assert spec.studies["rb_recipe"].recipe == "headline_only"
+    assert "dropout" in spec.studies["rb_recipe"].search_space["model"]
 
 
 def test_build_pruner_uses_transformer_only(tmp_path):
@@ -343,9 +372,9 @@ def test_worker_runs_and_resumes_for_classical_study(tmp_path, monkeypatch):
                     "max_rows": 10,
                     "fixed": {
                         "split": {
-                            "train_size": 0.8,
-                            "val_size": 0.1,
-                            "test_size": 0.1,
+                            "train_size": 0.6,
+                            "val_size": 0.2,
+                            "test_size": 0.2,
                             "random_state": 42,
                         },
                         "run": {"seed": 42},

@@ -1,3 +1,5 @@
+"""Legacy headline-only reference pipeline kept for comparison only."""
+
 from __future__ import annotations
  
 import torch

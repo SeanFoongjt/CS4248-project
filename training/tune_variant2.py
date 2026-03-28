@@ -53,7 +53,10 @@ TRANSFORMER_RUN_KEYS = {
     "device",
     "seed",
 }
-TRANSFORMER_MODEL_KEYS = {"pretrained_name"}
+TRANSFORMER_MODEL_KEYS = {
+    "distilbert": {"pretrained_name"},
+    "roberta": {"pretrained_name", "dropout"},
+}
 FIXED_ONLY_RUN_KEYS = {"device"}
 TRIAL_COUNT_STATES = (TrialState.COMPLETE, TrialState.FAIL, TrialState.PRUNED)
 PREPARED_FRAME_CACHE: dict[tuple[str, Optional[int]], pd.DataFrame] = {}
@@ -176,7 +179,7 @@ def _allowed_run_keys(study: StudySpec) -> set[str]:
 def _allowed_model_keys(study: StudySpec) -> set[str]:
     if study.family == "classical":
         return set(CLASSICAL_MODEL_KEYS[study.model])
-    return set(TRANSFORMER_MODEL_KEYS)
+    return set(TRANSFORMER_MODEL_KEYS[study.model])
 
 
 def _validate_fixed_params(study: StudySpec) -> None:
@@ -392,11 +395,12 @@ def build_trial_configs(
         )
         return split_cfg, run_cfg
     run_kwargs = dict(resolved["run"])
-    pretrained_name = resolved["model"].get("pretrained_name")
-    run_cfg = v2.TransformerRunConfig(
+    model_kwargs = dict(resolved["model"])
+    run_cfg = v2.default_transformer_run_config(
         model_name=study.model,
         output_dir=str(trial_dir),
-        pretrained_name=pretrained_name,
+        pretrained_name=model_kwargs.get("pretrained_name"),
+        dropout=model_kwargs.get("dropout"),
         **run_kwargs,
     )
     return split_cfg, run_cfg

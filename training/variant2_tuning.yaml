@@ -17,8 +17,7 @@ slurm:
     gres: null
   transformer:
     partition: gpu
-    constraint: xgph
-    gpus: 1
+    gpus: a100-80
     mem: 32G
 
 studies:

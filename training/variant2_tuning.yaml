@@ -16,6 +16,7 @@ slurm:
   classical:
     gres: null
   transformer:
+    partition: gpu
     gres: gpu:1
     mem: 32G
 

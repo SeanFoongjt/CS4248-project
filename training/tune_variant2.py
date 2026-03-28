@@ -658,7 +658,6 @@ def render_slurm_script(spec: TuningSpec, study_spec: StudySpec) -> str:
     err_path = (slurm_dir / "%x_%A_%a.err").as_posix()
     lines = [
         "#!/bin/bash",
-        "set -euo pipefail",
         f"#SBATCH --job-name={profile.job_name_prefix}-{study_spec.name}",
         f"#SBATCH --time={profile.time}",
         f"#SBATCH --cpus-per-task={profile.cpus_per_task}",
@@ -678,6 +677,8 @@ def render_slurm_script(spec: TuningSpec, study_spec: StudySpec) -> str:
         lines.append(f"#SBATCH --array=0-{profile.workers - 1}")
     lines.extend(
         [
+            "",
+            "set -euo pipefail",
             "",
             'cd "${SLURM_SUBMIT_DIR:-.}"',
             f"python -m training.tune_variant2 worker --config {shlex.quote(spec.config_path)} --study {shlex.quote(study_spec.name)}",

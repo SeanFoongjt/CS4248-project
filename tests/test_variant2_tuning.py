@@ -349,10 +349,13 @@ def test_submit_study_dry_run_writes_slurm_script(tmp_path):
     script = script_path.read_text(encoding="utf-8")
 
     assert result["submitted"] is False
+    assert script.splitlines()[0] == "#!/bin/bash"
+    assert script.splitlines()[1].startswith("#SBATCH --job-name=")
     assert "#SBATCH --partition=cpu" in script
     assert "#SBATCH --gpus=a100-80" in script
     assert "#SBATCH --gres=" not in script
     assert "#SBATCH --array=0-2" in script
+    assert script.index("set -euo pipefail") > script.index("#SBATCH --array=0-2")
     assert "--study rb_recipe" in script
 
 

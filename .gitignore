@@ -7,3 +7,6 @@ __pycache__/
 *url*.txt
 .DS_Store
 Thumbs.db
+
+.gitignore
+sandbox.ipynb

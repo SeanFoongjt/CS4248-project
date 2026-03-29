@@ -25,7 +25,6 @@ studies:
     model: tfidf_nb
     recipe: headline_section
     n_trials: 20
-    max_rows: 2000
     fixed:
       split:
         train_size: 0.6
@@ -62,7 +61,6 @@ studies:
     model: tfidf_nb
     recipe: headline_section_description
     n_trials: 20
-    max_rows: 2000
     fixed:
       split:
         train_size: 0.6
@@ -99,7 +97,6 @@ studies:
     model: tfidf_lr
     recipe: headline_section
     n_trials: 20
-    max_rows: 2000
     fixed:
       split:
         train_size: 0.6
@@ -151,7 +148,6 @@ studies:
     model: tfidf_lr
     recipe: headline_section_description
     n_trials: 20
-    max_rows: 2000
     fixed:
       split:
         train_size: 0.6
@@ -203,7 +199,6 @@ studies:
     model: distilbert
     recipe: headline_only
     n_trials: 16
-    max_rows: 2000
     fixed:
       split:
         train_size: 0.6
@@ -242,7 +237,6 @@ studies:
     model: distilbert
     recipe: headline_section
     n_trials: 16
-    max_rows: 2000
     fixed:
       split:
         train_size: 0.6
@@ -281,7 +275,6 @@ studies:
     model: distilbert
     recipe: headline_section_description
     n_trials: 16
-    max_rows: 2000
     fixed:
       split:
         train_size: 0.6
@@ -320,7 +313,6 @@ studies:
     model: roberta
     recipe: headline_only
     n_trials: 16
-    max_rows: 2000
     fixed:
       split:
         train_size: 0.6
@@ -356,7 +348,6 @@ studies:
     model: roberta
     recipe: headline_section
     n_trials: 16
-    max_rows: 2000
     fixed:
       split:
         train_size: 0.6
@@ -392,7 +383,6 @@ studies:
     model: roberta
     recipe: headline_section_description
     n_trials: 16
-    max_rows: 2000
     fixed:
       split:
         train_size: 0.6

@@ -48,7 +48,7 @@ except OSError:
 @dataclass
 class RobertaConfig:
     pretrained_name: str = "roberta-base"
-    max_length: int = 128
+    max_length: int = 256
     num_labels: int = 2
     dropout: float = 0.1
     learning_rate: float = 2e-5
@@ -59,7 +59,9 @@ class RobertaConfig:
     edge_embed_dim: int = 16  
     use_conceptnet: bool = True  
     export_visualisations: bool = True
-    output_dir: str = "result"  
+    output_dir: str = "result"
+    weight_decay: float = 0.01
+    text_format: str = "headline" # Options: 'headline', 'headline_section', 'all'  
  
  
 # ─────────────────────────────────────────────
@@ -72,12 +74,14 @@ class SarcasmGraphDataset(Dataset):
         samples: list[tuple[str, int]],
         tokenizer: RobertaTokenizer,
         max_length: int,
-        use_conceptnet: bool = True
+        use_conceptnet: bool = True,
+        text_format: str = "headline"
     ):
         self.samples = samples
         self.tokenizer = tokenizer
         self.max_length = max_length
         self.use_conceptnet = use_conceptnet
+        self.text_format = text_format
         self.graphs = []
         
         self._build_graphs()
@@ -85,9 +89,27 @@ class SarcasmGraphDataset(Dataset):
     def _build_graphs(self):
         import concurrent.futures
         
-        for text, label in tqdm(self.samples, desc="Initialising Graph Representations"):
+        for item in tqdm(self.samples, desc="Initialising Graph Representations"):
+            headline = item.get("headline", "")
+            section = item.get("section", "")
+            description = item.get("description", "")
+            label = item.get("label", 0)
+
+            if self.text_format == "headline":
+                combined_roberta_text = headline
+                spacy_text = headline
+            elif self.text_format == "headline_section":
+                combined_roberta_text = f"{headline} </s> {section}"
+                spacy_text = headline
+            elif self.text_format == "all":
+                combined_roberta_text = f"{headline} </s> {section} </s> {description}"
+                spacy_text = f"{headline}. {description}"
+            else:
+                combined_roberta_text = headline
+                spacy_text = headline
+
             encoding = self.tokenizer(
-                text,
+                combined_roberta_text,
                 max_length=self.max_length,
                 padding="max_length",
                 truncation=True,
@@ -108,7 +130,7 @@ class SarcasmGraphDataset(Dataset):
                 
             if self.use_conceptnet:
                 tokens = self.tokenizer.convert_ids_to_tokens(input_ids)
-                doc = nlp(text.lower())
+                doc = nlp(spacy_text.lower())
                 valid_pos = {"NOUN", "VERB", "ADJ", "PROPN"}
                 concepts_in_text = [token.lemma_.lower().strip().replace(" ", "_") 
                                     for token in doc if token.pos_ in valid_pos and not token.is_stop]
@@ -163,7 +185,7 @@ class SarcasmGraphDataset(Dataset):
                 edge_weight = edge_weight / weight_sum
                 
             self.graphs.append({
-                "headline": text,
+                "headline": headline,
                 "concepts": concepts_in_text if concepts_in_text else self.tokenizer.convert_ids_to_tokens(input_ids),
                 "input_ids": input_ids,
                 "attention_mask": attention_mask,
@@ -276,10 +298,9 @@ class RobertaGNNModel(nn.Module):
         edge_attr_1d = torch.where(valid_edge_mask, edge_attr_1d, torch.zeros_like(edge_attr_1d))
         
         raw_edge_feats = self.edge_embedding(edge_attr_1d)
-        # normalized_edge_feats = F.normalize(raw_edge_feats, p=2, dim=-1)
         irf_scalars = self.irf_weights[edge_attr_1d].unsqueeze(-1)
         empirical_scalars = edge_weight.view(-1).unsqueeze(-1)
-        # scaled_edge_feats = normalized_edge_feats * irf_scalars * empirical_scalars
+
         scaled_edge_feats = raw_edge_feats * irf_scalars * empirical_scalars
 
         x_gnn_flat = self.gat(x_flat, edge_index, edge_attr=scaled_edge_feats)
@@ -319,7 +340,7 @@ def train(
     optimizer = AdamW([
         {"params": transformer_params, "lr": cfg.learning_rate},
         {"params": gnn_params, "lr": cfg.gnn_learning_rate}
-    ], weight_decay=0.01)
+    ], weight_decay=cfg.weight_decay)
  
     total_steps = len(train_loader) * cfg.num_epochs
     warmup_steps = int(total_steps * cfg.warmup_ratio)
@@ -464,7 +485,8 @@ def build_pipeline(
         'model_state_dict': model.state_dict(),
         'num_relations': total_unique_relations,
         'irf_weights': irf_weights,
-        'use_conceptnet': cfg.use_conceptnet
+        'use_conceptnet': cfg.use_conceptnet,
+        'text_format': cfg.text_format
     }, output_path)
     
     logging.info(f"Graph-augmented Transformer Checkpoint saved to {output_path}.")
@@ -528,8 +550,9 @@ def predict(texts: list[str], model_path: str = "sarcasm_gnn_model.pt", output_d
     num_relations = checkpoint['num_relations']
     irf_weights = checkpoint['irf_weights']
     use_conceptnet = checkpoint.get('use_conceptnet', True)
+    text_format = checkpoint.get('text_format', 'headline')
 
-    cfg = RobertaConfig(use_conceptnet=use_conceptnet, output_dir=output_dir)
+    cfg = RobertaConfig(use_conceptnet=use_conceptnet, output_dir=output_dir, text_format=text_format)
     tokenizer = RobertaTokenizer.from_pretrained(cfg.pretrained_name)
 
     model = RobertaGNNModel(cfg, num_relations, irf_weights)
@@ -537,8 +560,15 @@ def predict(texts: list[str], model_path: str = "sarcasm_gnn_model.pt", output_d
     model.to(device)
     model.eval()
 
-    dummy_samples = [(text, 0) for text in texts]
-    eval_ds = SarcasmGraphDataset(dummy_samples, tokenizer, cfg.max_length, use_conceptnet=use_conceptnet)
+    dummy_samples = []
+    for item in texts:
+        if isinstance(item, str):
+            dummy_samples.append({"headline": item, "section": "", "description": "", "label": 0})
+        else:
+            item["label"] = 0
+            dummy_samples.append(item)
+
+    eval_ds = SarcasmGraphDataset(dummy_samples, tokenizer, cfg.max_length, use_conceptnet=use_conceptnet, text_format=text_format)
     eval_loader = DataLoader(eval_ds, batch_size=cfg.batch_size, collate_fn=graph_collate_fn)
 
     results = []
@@ -573,6 +603,7 @@ if __name__ == "__main__":
     parser.add_argument("--no-conceptnet", action="store_true", help="Disable ConceptNet API processing")
     parser.add_argument("--no-visualisations", action="store_true", help="Disable exporting performance visualisations")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--text-format", type=str, choices=["headline", "headline_section", "all"], default="headline", help="Which text fields to construct the graph from")
     
     parser.add_argument("--predict", action="store_true", help="Run in inference mode rather than training")
     parser.add_argument("--model-path", type=str, default="sarcasm_gnn_model.pt", help="Path to the trained model checkpoint (for prediction)")
@@ -588,12 +619,15 @@ if __name__ == "__main__":
     logging.info(f"Loading dataset from {args.input}...")
 
     try:
-        with open(args.input) as f:
+        with open(args.input, encoding='utf-8') as f:
             for line in f:
                 item = json.loads(line)
-                headline = item["headline"]
-                label = item["is_sarcastic"]
-                samples.append((headline, label))
+                samples.append({
+                    "headline": item.get("headline", ""),
+                    "section": item.get("preprocessed_article_section", ""),
+                    "description": item.get("preprocessed_description", ""),
+                    "label": item.get("is_sarcastic", 0)
+                })
     except FileNotFoundError:
         logging.error("Dataset files not found. Please ensure the Sarcasm JSON files are in the directory.")
         sys.exit(1)
@@ -627,7 +661,8 @@ if __name__ == "__main__":
             max_length=args.max_length,
             use_conceptnet=not args.no_conceptnet,
             export_visualisations=not args.no_visualisations,
-            output_dir=args.output
+            output_dir=args.output,
+            text_format=args.text_format
         )
         
         logging.info("\n--- Initiating Model Pipeline ---")
@@ -637,7 +672,7 @@ if __name__ == "__main__":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         tokenizer = RobertaTokenizer.from_pretrained(cfg.pretrained_name)
         
-        test_ds = SarcasmGraphDataset(data_test, tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet)
+        test_ds = SarcasmGraphDataset(data_test, tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet, text_format=cfg.text_format)
         test_loader = DataLoader(test_ds, batch_size=cfg.batch_size, collate_fn=graph_collate_fn)
         loss_fn = nn.CrossEntropyLoss()
         

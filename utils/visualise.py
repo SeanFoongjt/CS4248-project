@@ -176,11 +176,11 @@ def plot_training_metrics(history, save_dir):
     # --- Plot 1: Loss Progression ---
     plt.figure(figsize=(10, 6))
     plt.plot(epochs, history['train_loss'], label='Train Loss', marker=None, color='#3498db', linewidth=2.5)
-    plt.plot(epochs, history['test_loss'], label='Test Loss', marker=None, color='#e74c3c', linewidth=2.5)
+    plt.plot(epochs, history['test_loss'], label='Validation Loss', marker=None, color='#e74c3c', linewidth=2.5)
     
     plt.title('Loss Progression over Epochs (Convergence Curve)', fontsize=14, fontweight='bold')
     plt.xlabel('Epoch', fontsize=12)
-    plt.ylabel('Loss (BCE + Contrastive)', fontsize=12)
+    plt.ylabel('Loss', fontsize=12)
     plt.legend(loc='upper right')
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()

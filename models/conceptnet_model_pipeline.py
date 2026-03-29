@@ -650,10 +650,12 @@ if __name__ == "__main__":
     else:
         seed = args.seed if args.seed is not None else random.randint(1, 100)
         logging.info("The seed is " + str(seed))
+        logging.info("Splitting dataset into train, validation, and test sets...")
 
         data, data_test = train_test_split(samples, test_size=0.2, random_state=seed)
         data_train, data_valid = train_test_split(data, test_size=0.25, random_state=seed)
     
+        logging.info(f"Training on features: {args.text_format}")
         cfg = RobertaConfig(
             num_epochs=args.epochs,
             batch_size=args.batch_size,

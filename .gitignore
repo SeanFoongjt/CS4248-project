@@ -234,3 +234,5 @@ visualisations\
 *.csv
 *url*.txt
 Thumbs.db
+*.err
+*.out

@@ -486,7 +486,16 @@ def build_pipeline(
         'num_relations': total_unique_relations,
         'irf_weights': irf_weights,
         'use_conceptnet': cfg.use_conceptnet,
-        'text_format': cfg.text_format
+        'text_format': cfg.text_format,
+        'gnn_learning_rate': cfg.gnn_lr,
+        'dropout': cfg.dropout,
+        'weight_decay': cfg.weight_decay,
+        'warmup_ratio': cfg.warmup_ratio,
+        'edge_embed_dim': cfg.edge_embed_dim,
+        'learning_rate': cfg.learning_rate,
+        'max_length': cfg.max_length,
+        'num_epochs': cfg.num_epochs,
+        'batch_size': cfg.batch_size,
     }, output_path)
     
     logging.info(f"Graph-augmented Transformer Checkpoint saved to {output_path}.")
@@ -551,8 +560,30 @@ def predict(texts: list[str], model_path: str = "sarcasm_gnn_model.pt", output_d
     irf_weights = checkpoint['irf_weights']
     use_conceptnet = checkpoint.get('use_conceptnet', True)
     text_format = checkpoint.get('text_format', 'headline')
+    gnn_learning_rate = checkpoint.get('gnn_learning_rate', 1e-3)
+    dropout = checkpoint.get('dropout', 0.1)
+    weight_decay = checkpoint.get('weight_decay', 0.01)
+    warmup_ratio = checkpoint.get('warmup_ratio', 0.1)
+    edge_embed_dim = checkpoint.get('edge_embed_dim', 16)
+    max_length = checkpoint.get('max_length', 128)
+    num_epochs = checkpoint.get('num_epochs', 3)
+    learning_rate = checkpoint.get('learning_rate', 2e-5)
+    batch_size = checkpoint.get('batch_size', 32)
 
-    cfg = RobertaConfig(use_conceptnet=use_conceptnet, output_dir=output_dir, text_format=text_format)
+    cfg = RobertaConfig(
+        use_conceptnet=use_conceptnet,
+        output_dir=output_dir,
+        text_format=text_format,
+        gnn_learning_rate=gnn_learning_rate,
+        dropout=dropout,
+        weight_decay=weight_decay,
+        warmup_ratio=warmup_ratio,
+        edge_embed_dim=edge_embed_dim,
+        max_length=max_length,
+        num_epochs=num_epochs,
+        learning_rate=learning_rate,
+        batch_size=batch_size
+    )
     tokenizer = RobertaTokenizer.from_pretrained(cfg.pretrained_name)
 
     model = RobertaGNNModel(cfg, num_relations, irf_weights)
@@ -596,10 +627,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train and evaluate the Sarcasm GNN Model")
     parser.add_argument("--input", type=str, default="Sarcasm_Headlines_Dataset_v2.json", help="Path to the input JSON dataset")
     parser.add_argument("--output", type=str, default="result", help="Path to save the trained model checkpoint")
+    
     parser.add_argument("--epochs", type=int, default=3, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size for training and evaluation")
     parser.add_argument("--lr", type=float, default=2e-5, help="Learning rate for the optimizer")
     parser.add_argument("--max-length", type=int, default=128, help="Maximum sequence length for tokenisation")
+    parser.add_argument("--weight-decay", type=float, default=0.01, help="Weight decay for the optimizer")
+    parser.add_argument("--warmup-ratio", type=float, default=0.1, help="Warmup ratio for learning rate scheduling")
+    parser.add_argument("--edge-embed-dim", type=int, default=16, help="Dimensionality of edge embeddings in the GNN")
+    parser.add_argument("--gnn-lr", type=float, default=1e-3, help="Learning rate for GNN parameters (can be different from transformer learning rate)")
+    parser.add_argument("--dropout", type=float, default=0.1, help="Dropout rate for the classifier")
+
     parser.add_argument("--no-conceptnet", action="store_true", help="Disable ConceptNet API processing")
     parser.add_argument("--no-visualisations", action="store_true", help="Disable exporting performance visualisations")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
@@ -660,6 +698,11 @@ if __name__ == "__main__":
             num_epochs=args.epochs,
             batch_size=args.batch_size,
             learning_rate=args.lr,
+            gnn_learning_rate=args.gnn_lr,
+            dropout=args.dropout,
+            weight_decay=args.weight_decay,
+            warmup_ratio=args.warmup_ratio,
+            edge_embed_dim=args.edge_embed_dim,
             max_length=args.max_length,
             use_conceptnet=not args.no_conceptnet,
             export_visualisations=not args.no_visualisations,

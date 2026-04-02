@@ -8,7 +8,7 @@ import utils.global_state as global_state
 
 logging.info("[Initialisation] Node-Centric API loaded. HF Fallback disabled for bulk extraction.")
 
-def get_node_data(concept, weight_threshold=1.0):
+def get_node_data(concept, weight_threshold=1.0, verbose=False):
     """
     Thread-safe orchestrator for node-centric queries. 
     Implements a strict barrier to prevent Cache Stampedes with verbose logging.
@@ -17,49 +17,59 @@ def get_node_data(concept, weight_threshold=1.0):
     
     with global_state.cache_lock:
         if c_safe in global_state.conceptnet_cache:
-            logging.info(f"[Cache Hit] Node '{c_safe}' loaded instantly from local memory.")
+            if verbose:
+                logging.info(f"[Cache Hit] Node '{c_safe}' loaded instantly from local memory.")
             return global_state.conceptnet_cache[c_safe]
             
-    logging.info(f"[Cache Miss] Node '{c_safe}' not found. Entering concurrency barrier...")
+    if verbose:
+        logging.info(f"[Cache Miss] Node '{c_safe}' not found. Entering concurrency barrier...")
     with global_state.active_queries_lock:
         if c_safe in global_state.active_queries:
             event = global_state.active_queries[c_safe]
             is_owner = False
-            logging.info(f"[Concurrency] Conflict detected. Thread yielding ownership of '{c_safe}'.")
+            if verbose:
+                logging.info(f"[Concurrency] Conflict detected. Thread yielding ownership of '{c_safe}'.")
         else:
             event = threading.Event()
             global_state.active_queries[c_safe] = event
             is_owner = True
-            logging.info(f"[Concurrency] Thread claimed ownership of '{c_safe}'.")
+            if verbose:
+                logging.info(f"[Concurrency] Thread claimed ownership of '{c_safe}'.")
             
     if not is_owner:
-        logging.info(f"[Concurrency] Thread suspended: Waiting for owner to fetch '{c_safe}'.")
+        if verbose:
+            logging.info(f"[Concurrency] Thread suspended: Waiting for owner to fetch '{c_safe}'.")
         event.wait() 
-        logging.info(f"[Concurrency] Thread awakened: Fetching '{c_safe}' from updated cache.")
+        if verbose:
+            logging.info(f"[Concurrency] Thread awakened: Fetching '{c_safe}' from updated cache.")
         with global_state.cache_lock:
             return global_state.conceptnet_cache.get(c_safe, {})
-            
-    logging.info(f"[Network] Owner thread initiating HTTP scrape for node '{c_safe}'...")
+
+    if verbose:        
+        logging.info(f"[Network] Owner thread initiating HTTP scrape for node '{c_safe}'...")
     scraped_data = _scrape_concept_node(c_safe, weight_threshold)
     
     with global_state.cache_lock:
         global_state.conceptnet_cache[c_safe] = scraped_data
         global_state.query_counter += 1
-        logging.info(f"[Cache Write] Committed {len(scraped_data)} target edges for '{c_safe}' to memory buffer.")
+        if verbose:
+            logging.info(f"[Cache Write] Committed {len(scraped_data)} target edges for '{c_safe}' to memory buffer.")
         
         if global_state.query_counter >= global_state.AUTOSAVE_INTERVAL:
-            logging.info(f"[Cache Persist] Autosave threshold ({global_state.AUTOSAVE_INTERVAL}) reached. Flushing to disk...")
+            if verbose:
+                logging.info(f"[Cache Persist] Autosave threshold ({global_state.AUTOSAVE_INTERVAL}) reached. Flushing to disk...")
             global_state.save_cache(global_state.conceptnet_cache)
             global_state.query_counter = 0
             
     with global_state.active_queries_lock:
         del global_state.active_queries[c_safe]
         event.set() 
-        logging.info(f"[Concurrency] Lock released. Wake-up signal broadcasted for '{c_safe}'.")
+        if verbose:
+            logging.info(f"[Concurrency] Lock released. Wake-up signal broadcasted for '{c_safe}'.")
         
     return scraped_data
 
-def _process_partition(rel_url, concept, weight_threshold, headers, shared_node_edges, local_lock):
+def _process_partition(rel_url, concept, weight_threshold, headers, shared_node_edges, local_lock, verbose=False):
     """Worker function to process a single feature box partition in parallel."""
     # Synchronised rate limiting
     with global_state.api_lock:
@@ -67,12 +77,14 @@ def _process_partition(rel_url, concept, weight_threshold, headers, shared_node_
         elapsed = current_time - global_state.last_api_time
         if elapsed < global_state.spacing_api: 
             delay = global_state.spacing_api - elapsed
-            logging.info(f"[Rate Limit] Throttling partition thread for {delay:.2f}s...")
+            if verbose:
+                logging.info(f"[Rate Limit] Throttling partition thread for {delay:.2f}s...")
             time.sleep(delay)
         global_state.last_api_time = time.time()
         
     partition_url = f"https://conceptnet.io{rel_url}" if not rel_url.startswith('http') else rel_url
-    logging.info(f"[Scraper-Worker] Fetching partition data from {partition_url}...")
+    if verbose:
+        logging.info(f"[Scraper-Worker] Fetching partition data from {partition_url}...")
     
     try:
         part_resp = requests.get(partition_url, headers=headers, timeout=10) 
@@ -126,13 +138,16 @@ def _process_partition(rel_url, concept, weight_threshold, headers, shared_node_
                         if rel_label not in shared_node_edges[target_word] or weight > shared_node_edges[target_word][rel_label]:
                             shared_node_edges[target_word][rel_label] = weight
                             
-            logging.info(f"[Scraper-Worker] Partition processed. {len(local_updates)} nodes aggregated.")
+            if verbose:
+                logging.info(f"[Scraper-Worker] Partition processed. {len(local_updates)} nodes aggregated.")
         else:
-            logging.info(f"[Scraper-Worker] Error: Partition URL returned status {part_resp.status_code}.")
+            if verbose:
+                logging.info(f"[Scraper-Worker] Error: Partition URL returned status {part_resp.status_code}.")
     except requests.exceptions.RequestException as e:
-        logging.info(f"[Scraper-Worker] Partition Network Error: {e}")
+        if verbose:
+            logging.info(f"[Scraper-Worker] Partition Network Error: {e}")
 
-def _scrape_concept_node(concept, weight_threshold):
+def _scrape_concept_node(concept, weight_threshold, verbose=False):
     """Hits the main page, discovers limit=1000 partition URLs, and dispatches worker threads."""
     base_url = f"https://conceptnet.io/c/en/{concept}"
     headers = {'User-Agent': 'SarcasmGNN_Research_Bot/2.0'}
@@ -141,11 +156,13 @@ def _scrape_concept_node(concept, weight_threshold):
     local_lock = threading.Lock() # Protects shared_node_edges during multi-threaded reduction
     
     try:
-        logging.info(f"[Scraper-Master] Requesting base topology for '{concept}' -> {base_url}")
+        if verbose:
+            logging.info(f"[Scraper-Master] Requesting base topology for '{concept}' -> {base_url}")
         response = requests.get(base_url, headers=headers, timeout=5)
         
         if response.status_code != 200:
-            logging.info(f"[Scraper-Master] Warning: ConceptNet returned status {response.status_code} for '{concept}'.")
+            if verbose:
+                logging.info(f"[Scraper-Master] Warning: ConceptNet returned status {response.status_code} for '{concept}'.")
             return {}
             
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -159,12 +176,13 @@ def _scrape_concept_node(concept, weight_threshold):
             if "limit=" in rel_url:
                 partition_urls.append(rel_url)
                 
-        logging.info(f"[Scraper-Master] Discovered {len(partition_urls)} valid partitions. Dispatching worker threads...")
+        if verbose:
+            logging.info(f"[Scraper-Master] Discovered {len(partition_urls)} valid partitions. Dispatching worker threads...")
         
         # Dispatch partition scraping concurrently
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [
-                executor.submit(_process_partition, rel_url, concept, weight_threshold, headers, shared_node_edges, local_lock)
+                executor.submit(_process_partition, rel_url, concept, weight_threshold, headers, shared_node_edges, local_lock, verbose)
                 for rel_url in partition_urls
             ]
             concurrent.futures.wait(futures)
@@ -176,9 +194,11 @@ def _scrape_concept_node(concept, weight_threshold):
         }
         
         total_unique_targets = len(final_node_edges)
-        logging.info(f"[Scraper-Master] Success. Flattened {total_unique_targets} strictly unique semantic targets for '{concept}'.")
+        if verbose:
+            logging.info(f"[Scraper-Master] Success. Flattened {total_unique_targets} strictly unique semantic targets for '{concept}'.")
         return final_node_edges
         
     except requests.exceptions.RequestException as e:
-        logging.info(f"[Network Error] Fatal exception during master scrape of '{concept}': {e}")
+        if verbose:
+            logging.info(f"[Network Error] Fatal exception during master scrape of '{concept}': {e}")
         return {}

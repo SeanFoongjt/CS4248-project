@@ -487,7 +487,7 @@ def build_pipeline(
         'irf_weights': irf_weights,
         'use_conceptnet': cfg.use_conceptnet,
         'text_format': cfg.text_format,
-        'gnn_learning_rate': cfg.gnn_lr,
+        'gnn_learning_rate': cfg.gnn_learning_rate,
         'dropout': cfg.dropout,
         'weight_decay': cfg.weight_decay,
         'warmup_ratio': cfg.warmup_ratio,

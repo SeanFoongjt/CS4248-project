@@ -130,11 +130,30 @@ def track_and_log_weights(model, vocab, epoch):
     model.eval()
     with torch.no_grad():
         for rel_label, rel_id in vocab.items():
-            if rel_id < model.edge_embedding.num_embeddings:
-                embedding_vector = model.edge_embedding.weight[rel_id]
-                irf_multiplier = model.irf_weights[rel_id].item()
-                effective_weight = torch.norm(embedding_vector * irf_multiplier).item()
-                
+            effective_weight = None
+            
+            # 1. Check if using the older GAT architecture
+            if hasattr(model, 'edge_embedding'):
+                if rel_id < model.edge_embedding.num_embeddings:
+                    embedding_vector = model.edge_embedding.weight[rel_id]
+                    irf_multiplier = model.irf_weights[rel_id].item()
+                    effective_weight = torch.norm(embedding_vector * irf_multiplier).item()
+                    
+            # 2. Check if using the new RGCN architecture
+            elif hasattr(model, 'rgcn'):
+                if rel_id < model.rgcn.num_relations:
+                    # RGCN uses basis decomposition (num_bases). The 'comp' matrix stores 
+                    # the coefficients for each relation. The L2 norm of these coefficients 
+                    # serves as an excellent proxy for the prominence of the semantic relation.
+                    if hasattr(model.rgcn, 'comp') and model.rgcn.comp is not None:
+                        comp_vector = model.rgcn.comp[rel_id]
+                        effective_weight = torch.norm(comp_vector).item()
+                    # Fallback if num_bases is not used and full weight matrices exist
+                    elif hasattr(model.rgcn, 'weight'):
+                        weight_matrix = model.rgcn.weight[rel_id]
+                        effective_weight = torch.norm(weight_matrix).item()
+
+            if effective_weight is not None:
                 if rel_label not in weight_history:
                     weight_history[rel_label] = []
                     
@@ -146,6 +165,7 @@ def track_and_log_weights(model, vocab, epoch):
                     logging.info(f"{rel_label:16s} | Weight: {effective_weight:.4f} | Delta: {sign}{delta:.4f}")
                 else:
                     logging.info(f"{rel_label:16s} | Weight: {effective_weight:.4f} | Delta: Initialised")
+                    
     logging.info("------------------------------------\n")
 
 def plot_weight_trajectories(history, save_path):

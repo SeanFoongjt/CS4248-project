@@ -3,7 +3,7 @@ storage:
   study_prefix: variant2
 
 paths:
-  data_path: ../Sarcasm_Headlines_Dataset_With_Metadata.json
+  data_path: ../Sarcasm_Headlines_Dataset_With_Metadata_90k.json
   output_root: ../runs/variant2_tuning
 
 slurm:

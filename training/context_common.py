@@ -106,7 +106,9 @@ def load_jsonl(path: str | Path) -> pd.DataFrame:
     """Read a json-lines dataset into a DataFrame."""
 
     rows: list[dict[str, Any]] = []
-    with open(path, "r", encoding="utf-8") as handle:
+    # Some exported dataset files begin with a UTF-8 BOM. Using utf-8-sig
+    # keeps standard UTF-8 behavior while transparently stripping the BOM.
+    with open(path, "r", encoding="utf-8-sig") as handle:
         for line in handle:
             line = line.strip()
             if not line:

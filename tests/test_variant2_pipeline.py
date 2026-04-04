@@ -342,3 +342,19 @@ def test_load_jsonl_round_trip(tmp_path):
 
     assert len(df) == 2
     assert "row_id" in df.columns
+
+
+def test_load_jsonl_accepts_utf8_bom(tmp_path):
+    path = Path(tmp_path) / "toy_bom.jsonl"
+    rows = [
+        {"is_sarcastic": 0, "headline": "a", "article_section": "news", "description": "x"},
+        {"is_sarcastic": 1, "headline": "b", "article_section": "news", "description": "y"},
+    ]
+    with open(path, "w", encoding="utf-8-sig") as f:
+        for row in rows:
+            f.write(json.dumps(row) + "\n")
+
+    df = v2.load_jsonl(path)
+
+    assert len(df) == 2
+    assert df.iloc[0]["headline"] == "a"

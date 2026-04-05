@@ -40,6 +40,23 @@ except OSError:
     import spacy.cli
     spacy.cli.download("en_core_web_md")
     nlp = spacy.load("en_core_web_md")
+
+def set_global_seed(seed: int):
+    """Enforces global determinism across all random number generators."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        
+    # Forces deterministic behavior for CuDNN
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    
+    # Optional: Force PyTorch to use deterministic algorithms (can slow down training slightly)
+    # torch.use_deterministic_algorithms(True, warn_only=True)
  
 # ─────────────────────────────────────────────
 # 1. CONFIG
@@ -661,6 +678,8 @@ if __name__ == "__main__":
     log_path = os.path.join(args.output, f"training_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log")
     setup_logger(path=log_path)
 
+    set_global_seed(args.seed)
+
     # Resolve Default Pretrained Name based on Architecture
     if args.pretrained_name is None:
         pretrained_name = "roberta-base" if args.model_type == "roberta" else "distilbert-base-uncased"
@@ -701,12 +720,11 @@ if __name__ == "__main__":
         sys.exit(0)
 
     else:
-        seed = args.seed if args.seed is not None else random.randint(1, 100)
-        logging.info("The seed is " + str(seed))
+        logging.info("The seed is " + str(args.seed))
         logging.info("Splitting dataset into train, validation, and test sets...")
 
-        data, data_test = train_test_split(samples, test_size=0.2, random_state=seed)
-        data_train, data_valid = train_test_split(data, test_size=0.25, random_state=seed)
+        data, data_test = train_test_split(samples, test_size=0.2, random_state=args.seed)
+        data_train, data_valid = train_test_split(data, test_size=0.25, random_state=args.seed)
     
         logging.info(f"Training on features: {args.text_format} with {args.model_type.upper()}")
         cfg = TransformerGNNConfig(

@@ -17,7 +17,7 @@ slurm:
     gres: null
   transformer:
     partition: gpu-long
-    gpus: a100-40
+    gpus: h100-47
     mem: 32G
 
 studies:

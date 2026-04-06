@@ -1,9 +1,12 @@
-*url*.txt
 .venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 
 .vscode/
+*url*.txt
 .DS_Store
 Thumbs.db
+
+.gitignore
+sandbox.ipynb

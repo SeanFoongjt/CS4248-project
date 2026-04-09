@@ -1,5 +1,4 @@
 beautifulsoup4>=4.14.3
-en_core_web_md>=3.8.0
 gradio_client>=2.3.0
 matplotlib>=3.10.8
 optuna>=4.8.0
@@ -11,3 +10,6 @@ torch>=2.10.0
 torch-geometric>=2.7.0
 transformers>=5.3.0
 nltk
+
+# Install spaCy models separately, for example:
+# python -m spacy download en_core_web_md

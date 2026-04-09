@@ -235,11 +235,14 @@ def recipe_by_name(name: str) -> ContextRecipe:
     raise ValueError(f"Unknown recipe: {name}")
 
 
-def clone_transformer_config(base_cfg: TransformerRunConfig, model_name: str, output_dir: str) -> TransformerRunConfig:
-    """Clone one transformer config while overriding model/output identity."""
+def clone_transformer_config(
+    base_cfg: TransformerRunConfig,
+    model_name: str,
+    output_dir: str,
+) -> TransformerRunConfig:
+    """Clone a transformer config and override model/output fields."""
 
-    return default_transformer_run_config(
-        model_name=model_name,
-        output_dir=output_dir,
-        **{**asdict(base_cfg), "model_name": model_name, "output_dir": output_dir},
-    )
+    cfg = asdict(base_cfg)
+    cfg["model_name"] = model_name
+    cfg["output_dir"] = output_dir
+    return default_transformer_run_config(**cfg)

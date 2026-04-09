@@ -229,6 +229,7 @@ __marimo__/
 
 # Custom ignore rules
 run/
+runs/
 result\
 visualisations\
 *.png

@@ -12,20 +12,18 @@ from utils.experiment_eval import (
     evaluate_checkpoint,
     load_samples,
     predict_checkpoint,
-    shuffle_descriptions,
 )
 from utils.logger_setup import setup_logger
 
 
-def format_result_block(result: dict, seed: int, bin_size: int, input_path: str) -> str:
+def format_result_block(result: dict, seed: int, input_path: str) -> str:
     return (
         "\n=========================================\n"
-        "        FINAL SHUFFLED TEST RESULTS      \n"
+        "        FINAL ORIGINAL TEST RESULTS      \n"
         "=========================================\n"
         f"Model:         {result['model_path']}\n"
         f"Input:         {input_path}\n"
         f"Seed:          {seed}\n"
-        f"Bin Size:      {bin_size}\n"
         f"Model Type:    {result['model_type']}\n"
         f"Use ConceptNet:{result['use_conceptnet']}\n"
         f"Text Format:   {result['text_format']}\n"
@@ -39,7 +37,7 @@ def format_result_block(result: dict, seed: int, bin_size: int, input_path: str)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate trained GNN checkpoints on a test split with shuffled descriptions.")
+    parser = argparse.ArgumentParser(description="Evaluate trained GNN checkpoints on the original unshuffled test split.")
     parser.add_argument(
         "--input",
         type=str,
@@ -49,7 +47,7 @@ def main():
     parser.add_argument(
         "--output",
         type=str,
-        default="result/experiments",
+        default="result/original_test_eval",
         help="Directory to save logs and summary outputs.",
     )
     parser.add_argument(
@@ -59,12 +57,6 @@ def main():
         help="Checkpoint path(s). Defaults to the four tuned `all` checkpoints under result/.",
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed used to recover the test split.")
-    parser.add_argument(
-        "--bin-size",
-        type=int,
-        default=5,
-        help="Description length bin size used before shuffling.",
-    )
 
     args = parser.parse_args()
 
@@ -76,7 +68,7 @@ def main():
     if not model_paths:
         raise FileNotFoundError("No default `all` checkpoints were found under result/.")
 
-    logging.info(f"Evaluating {len(model_paths)} checkpoint(s) on the shuffled test set.")
+    logging.info(f"Evaluating {len(model_paths)} checkpoint(s) on the original test set.")
     for model_path in model_paths:
         logging.info(f" - {model_path}")
 
@@ -84,30 +76,27 @@ def main():
     logging.info(f"Loaded {len(samples)} total samples from {args.input}.")
 
     _, data_test = train_test_split(samples, test_size=0.2, random_state=args.seed)
-    logging.info(f"Recovered test split with {len(data_test)} samples using seed={args.seed}.")
-
-    shuffled_test = shuffle_descriptions(data_test, bin_size=args.bin_size, seed=args.seed)
-    logging.info(f"Shuffled descriptions within length bins of size {args.bin_size}.")
+    logging.info(f"Recovered original test split with {len(data_test)} samples using seed={args.seed}.")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     results = []
     prediction_rows = []
 
     for model_path in model_paths:
-        logging.info(f"Evaluating shuffled test set with checkpoint: {model_path}")
-        result = evaluate_checkpoint(model_path, shuffled_test, args.output, device)
+        logging.info(f"Evaluating original test set with checkpoint: {model_path}")
+        result = evaluate_checkpoint(model_path, data_test, args.output, device)
         results.append(result)
-        prediction_rows.extend(predict_checkpoint(model_path, shuffled_test, args.output, device))
-        block = format_result_block(result, args.seed, args.bin_size, args.input)
+        prediction_rows.extend(predict_checkpoint(model_path, data_test, args.output, device))
+        block = format_result_block(result, args.seed, args.input)
         logging.info(block)
         print(block)
 
-    summary_path = os.path.join(args.output, "experiment_shuffle_description.txt")
+    summary_path = os.path.join(args.output, "original_test_set_results.txt")
     with open(summary_path, "w", encoding="utf-8") as f:
         for result in results:
-            f.write(format_result_block(result, args.seed, args.bin_size, args.input))
+            f.write(format_result_block(result, args.seed, args.input))
 
-    csv_path = os.path.join(args.output, "experiment_shuffle_description.csv")
+    csv_path = os.path.join(args.output, "original_test_set_results.csv")
     with open(csv_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(
             f,
@@ -129,7 +118,7 @@ def main():
         writer.writeheader()
         writer.writerows(results)
 
-    predictions_csv_path = os.path.join(args.output, "experiment_shuffle_description_predictions.csv")
+    predictions_csv_path = os.path.join(args.output, "original_test_set_predictions.csv")
     with open(predictions_csv_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.DictWriter(
             f,

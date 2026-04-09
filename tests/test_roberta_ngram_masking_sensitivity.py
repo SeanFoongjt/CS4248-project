@@ -133,3 +133,62 @@ def test_aggregate_span_scores_summarizes_across_examples():
     assert grouped.iloc[0]["word"] == "meeting"
     assert grouped.iloc[0]["count"] == 2
     assert grouped.iloc[0]["mean_sarcastic_delta"] == 0.35
+
+
+def test_summarize_dataset_deltas_reports_distribution():
+    df = masking.pd.DataFrame(
+        {
+            "top_word_delta": [0.1, 0.2, 0.4],
+        }
+    )
+
+    stats = masking.summarize_dataset_deltas(df)
+
+    assert stats["count"] == 3
+    assert stats["mean"] == 0.23333333333333336
+    assert stats["median"] == 0.2
+    assert stats["min"] == 0.1
+    assert stats["max"] == 0.4
+
+
+def test_refresh_dataset_report_from_outputs_includes_delta_statistics(tmp_path):
+    out_dir = tmp_path / "ngram_masking_dataset"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    masking.pd.DataFrame(
+        [
+            {"row_id": 0, "top_word_delta": 0.1},
+            {"row_id": 1, "top_word_delta": 0.2},
+            {"row_id": 2, "top_word_delta": 0.4},
+        ]
+    ).to_csv(out_dir / "ngram_masking_dataset_summary.csv", index=False)
+    masking.pd.DataFrame(
+        [
+            {
+                "word": "meeting",
+                "count": 2,
+                "mean_sarcastic_delta": 0.35,
+                "median_sarcastic_delta": 0.35,
+                "std_sarcastic_delta": 0.05,
+                "min_sarcastic_delta": 0.3,
+                "max_sarcastic_delta": 0.4,
+            },
+            {
+                "word": "sarcasm",
+                "count": 1,
+                "mean_sarcastic_delta": 0.6,
+                "median_sarcastic_delta": 0.6,
+                "std_sarcastic_delta": 0.0,
+                "min_sarcastic_delta": 0.6,
+                "max_sarcastic_delta": 0.6,
+            },
+        ]
+    ).to_csv(out_dir / "ngram_masking_aggregate_words.csv", index=False)
+
+    masking.refresh_dataset_report_from_outputs(out_dir, report_top_k=25)
+
+    content = (out_dir / "ngram_masking_dataset_report.md").read_text(encoding="utf-8")
+    assert "## Delta Statistics" in content
+    assert "| Mean | 0.233333 |" in content
+    assert "| P95 | 0.380000 |" in content
+    assert "## Highest-Impact Words" in content
+    assert "| 1 | sarcasm | 1 | 0.600000 | 0.600000 | 0.600000 |" in content

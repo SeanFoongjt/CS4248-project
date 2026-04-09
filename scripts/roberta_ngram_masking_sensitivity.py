@@ -337,17 +337,65 @@ def aggregate_chosen_words(analyses: Sequence[ExampleAnalysis]) -> pd.DataFrame:
     return grouped
 
 
-def write_dataset_report(out_dir: Path, analyses: Sequence[ExampleAnalysis], *, report_top_k: int) -> None:
-    aggregate = aggregate_chosen_words(analyses)
+def summarize_dataset_deltas(summary_df: pd.DataFrame) -> dict[str, float | int]:
+    deltas = pd.to_numeric(summary_df.get("top_word_delta"), errors="coerce").dropna()
+    if deltas.empty:
+        return {
+            "count": 0,
+            "mean": 0.0,
+            "median": 0.0,
+            "std": 0.0,
+            "min": 0.0,
+            "p90": 0.0,
+            "p95": 0.0,
+            "max": 0.0,
+        }
+    return {
+        "count": int(deltas.shape[0]),
+        "mean": float(deltas.mean()),
+        "median": float(deltas.median()),
+        "std": float(deltas.std(ddof=0)),
+        "min": float(deltas.min()),
+        "p90": float(deltas.quantile(0.90)),
+        "p95": float(deltas.quantile(0.95)),
+        "max": float(deltas.max()),
+    }
+
+
+def write_dataset_report_from_frames(
+    out_dir: Path,
+    summary_df: pd.DataFrame,
+    aggregate: pd.DataFrame,
+    *,
+    report_top_k: int,
+) -> None:
+    delta_stats = summarize_dataset_deltas(summary_df)
+    rows_analyzed = int(summary_df.shape[0])
+    rows_with_top_word = int(pd.to_numeric(summary_df.get("top_word_delta"), errors="coerce").notna().sum())
     lines = [
         "# RoBERTa Word Masking Dataset Summary",
         "",
-        f"- Rows analyzed: `{len(analyses)}`",
-        f"- Rows with a chosen top word: `{sum(1 for item in analyses if item.top_word is not None)}`",
+        f"- Rows analyzed: `{rows_analyzed}`",
+        f"- Rows with a chosen top word: `{rows_with_top_word}`",
         "",
         "## Per-row summary",
         "",
         f"- `ngram_masking_dataset_summary.csv` contains the top single word for each row and its delta.",
+        "",
+        "## Delta Statistics",
+        "",
+        "These statistics summarize `top_word_delta`, the drop in sarcastic probability after masking the strongest single word for each analyzed row.",
+        "",
+        "| Metric | Value |",
+        "| --- | ---: |",
+        f"| Count | {delta_stats['count']} |",
+        f"| Mean | {delta_stats['mean']:.6f} |",
+        f"| Median | {delta_stats['median']:.6f} |",
+        f"| Std | {delta_stats['std']:.6f} |",
+        f"| Min | {delta_stats['min']:.6f} |",
+        f"| P90 | {delta_stats['p90']:.6f} |",
+        f"| P95 | {delta_stats['p95']:.6f} |",
+        f"| Max | {delta_stats['max']:.6f} |",
         "",
         "## Top chosen words",
         "",
@@ -360,7 +408,53 @@ def write_dataset_report(out_dir: Path, analyses: Sequence[ExampleAnalysis], *, 
             f"{row['median_sarcastic_delta']:.6f} | {row['std_sarcastic_delta']:.6f} | "
             f"{row['min_sarcastic_delta']:.6f} | {row['max_sarcastic_delta']:.6f} |"
         )
+    impact_ranked = (
+        aggregate.sort_values(
+            ["mean_sarcastic_delta", "max_sarcastic_delta", "count"],
+            ascending=[False, False, False],
+        )
+        .reset_index(drop=True)
+    )
+    lines.extend(
+        [
+            "",
+            "## Highest-Impact Words",
+            "",
+            "These words are ranked by the largest mean `top_word_delta` across rows where they were selected as the strongest word-level mask.",
+            "",
+            "| Rank | Word | Count | Mean Delta | Median Delta | Max Delta |",
+            "| --- | --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for idx, row in enumerate(impact_ranked.head(report_top_k).to_dict(orient="records"), start=1):
+        lines.append(
+            f"| {idx} | {row['word']} | {int(row['count'])} | {row['mean_sarcastic_delta']:.6f} | "
+            f"{row['median_sarcastic_delta']:.6f} | {row['max_sarcastic_delta']:.6f} |"
+        )
     (out_dir / "ngram_masking_dataset_report.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def write_dataset_report(out_dir: Path, analyses: Sequence[ExampleAnalysis], *, report_top_k: int) -> None:
+    aggregate = aggregate_chosen_words(analyses)
+    summary_df = pd.DataFrame(
+        [
+            {
+                "row_id": analysis.row_id,
+                "label": analysis.label,
+                "headline": analysis.headline,
+                "section": analysis.section,
+                "description": analysis.description,
+                "predicted_label": analysis.predicted_label,
+                "non_sarcastic_prob": analysis.non_sarcastic_prob,
+                "sarcastic_prob": analysis.sarcastic_prob,
+                "top_word": analysis.top_word,
+                "top_word_delta": analysis.top_word_delta,
+                "top_word_masked_sarcastic_prob": analysis.top_word_masked_sarcastic_prob,
+            }
+            for analysis in analyses
+        ]
+    )
+    write_dataset_report_from_frames(out_dir, summary_df, aggregate, report_top_k=report_top_k)
 
 
 def write_report(
@@ -463,10 +557,22 @@ def write_dataset_outputs(out_dir: Path, analyses: Sequence[ExampleAnalysis], *,
     write_dataset_report(out_dir, analyses, report_top_k=report_top_k)
 
 
+def refresh_dataset_report_from_outputs(out_dir: Path, *, report_top_k: int) -> None:
+    summary_path = out_dir / "ngram_masking_dataset_summary.csv"
+    aggregate_path = out_dir / "ngram_masking_aggregate_words.csv"
+    if not summary_path.exists():
+        raise ValueError(f"Missing dataset summary file: {summary_path}")
+    if not aggregate_path.exists():
+        raise ValueError(f"Missing aggregate words file: {aggregate_path}")
+    summary_df = pd.read_csv(summary_path)
+    aggregate_df = pd.read_csv(aggregate_path)
+    write_dataset_report_from_frames(out_dir, summary_df, aggregate_df, report_top_k=report_top_k)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run n-gram masking sensitivity on a saved RoBERTa checkpoint.")
     parser.add_argument("checkpoint_or_study_dir", help="Checkpoint dir or study dir containing best_model/materialization.json")
-    parser.add_argument("--recipe", required=True, choices=[recipe.name for recipe in VARIANT2_RECIPES])
+    parser.add_argument("--recipe", required=False, choices=[recipe.name for recipe in VARIANT2_RECIPES])
     parser.add_argument("--headline")
     parser.add_argument("--section", default=None)
     parser.add_argument("--description", default=None)
@@ -479,11 +585,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--progress-every", type=int, default=100, help="Print batch-mode progress every N rows. Use 0 to disable.")
     parser.add_argument("--device", default="auto")
     parser.add_argument("--out-dir", default=None, help="Directory for markdown/json outputs")
+    parser.add_argument(
+        "--refresh-dataset-report",
+        action="store_true",
+        help="Regenerate ngram_masking_dataset_report.md from existing CSV outputs in --out-dir.",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    if args.refresh_dataset_report:
+        out_dir = Path(args.out_dir).resolve() if args.out_dir else Path(args.checkpoint_or_study_dir).resolve()
+        refresh_dataset_report_from_outputs(out_dir, report_top_k=args.report_top_k)
+        return
+    if not args.recipe:
+        raise ValueError("Provide --recipe unless you are using --refresh-dataset-report.")
     if not args.data_path and not args.headline:
         raise ValueError("Provide --headline for single-example mode, or --data-path for dataset mode.")
     checkpoint_dir = resolve_checkpoint_dir(args.checkpoint_or_study_dir)

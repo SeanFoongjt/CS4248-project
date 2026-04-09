@@ -4,6 +4,7 @@ import argparse
 import csv
 import json
 import os
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -123,15 +124,153 @@ def fmt(value: float | int | None, digits: int = 4) -> str:
     return f"{value:.{digits}f}"
 
 
-def render_markdown(rows: list[StudyRow], out_path: Path, loss_plot_pdf_name: str) -> None:
+def load_supplemental_results(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    return load_json(path)
+
+
+def prettify_recipe_name(recipe: str) -> str:
+    return recipe.replace("_", " ")
+
+
+def build_variant_summary(
+    rows: list[StudyRow],
+    *,
+    models: tuple[str, ...] = ("distilbert", "roberta"),
+) -> list[dict[str, str | float | None]]:
+    grouped: dict[str, dict[str, StudyRow]] = defaultdict(dict)
+    for row in rows:
+        if row.model not in models:
+            continue
+        existing = grouped[row.recipe].get(row.model)
+        if existing is None or ((row.val_macro_f1 or float("-inf")) > (existing.val_macro_f1 or float("-inf"))):
+            grouped[row.recipe][row.model] = row
+
+    variant_rows: list[dict[str, str | float | None]] = []
+    for recipe in sorted(grouped):
+        summary_row: dict[str, str | float | None] = {
+            "variant": recipe,
+            "variant_label": prettify_recipe_name(recipe),
+        }
+        for model in models:
+            picked = grouped[recipe].get(model)
+            summary_row[model] = picked.test_macro_f1 if picked else None
+        variant_rows.append(summary_row)
+    return variant_rows
+
+
+def write_variant_summary_csv(summary_rows: list[dict[str, str | float | None]], out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["variant", "variant_label", "distilbert", "roberta"]
+    with out_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in summary_rows:
+            writer.writerow(row)
+
+
+def write_supplemental_results_csv(payload: dict[str, Any], out_path: Path) -> None:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = ["variant", "variant_label", "model", "model_label", "loss", "accuracy", "precision", "recall", "f1"]
+    models = {item["id"]: item["label"] for item in payload.get("models", [])}
+    variants = payload.get("variants", [])
+    results = payload.get("results", {})
+    with out_path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for variant in variants:
+            variant_id = variant["id"]
+            variant_results = results.get(variant_id, {})
+            for model_id, metrics in variant_results.items():
+                writer.writerow(
+                    {
+                        "variant": variant_id,
+                        "variant_label": variant["label"],
+                        "model": model_id,
+                        "model_label": models.get(model_id, model_id),
+                        "loss": metrics.get("loss"),
+                        "accuracy": metrics.get("accuracy"),
+                        "precision": metrics.get("precision"),
+                        "recall": metrics.get("recall"),
+                        "f1": metrics.get("f1"),
+                    }
+                )
+
+
+def render_supplemental_results_markdown(payload: dict[str, Any]) -> list[str]:
+    if not payload:
+        return []
+    metric_specs = [
+        ("loss", "Loss"),
+        ("accuracy", "Accuracy"),
+        ("precision", "Precision"),
+        ("recall", "Recall"),
+        ("f1", "F1-Score"),
+    ]
+    model_defs = payload.get("models", [])
+    variants = payload.get("variants", [])
+    results = payload.get("results", {})
+    if not model_defs or not variants or not results:
+        return []
+
+    lines = [
+        f"## {payload.get('title', 'Supplemental Results')}",
+        "",
+        payload.get("description", "Additional test-set results."),
+        "",
+    ]
+    header = "| Data Variant | " + " | ".join(model["label"] for model in model_defs) + " |"
+    divider = "| --- | " + " | ".join("---:" for _ in model_defs) + " |"
+    for metric_key, metric_label in metric_specs:
+        lines.extend(
+            [
+                f"### {metric_label}",
+                "",
+                header,
+                divider,
+            ]
+        )
+        for variant in variants:
+            row = [variant["label"]]
+            variant_results = results.get(variant["id"], {})
+            for model in model_defs:
+                value = (variant_results.get(model["id"]) or {}).get(metric_key)
+                row.append(fmt(value))
+            lines.append("| " + " | ".join(row) + " |")
+        lines.append("")
+    return lines
+
+
+def render_markdown(
+    rows: list[StudyRow],
+    out_path: Path,
+    loss_plot_pdf_name: str,
+    supplemental_results: dict[str, Any] | None = None,
+) -> None:
+    variant_summary = build_variant_summary(rows)
     lines = [
         "# Model Comparison Report",
         "",
+        "## Best Test Macro-F1 by Data Variant",
+        "",
+        "| Data Variant | DistilBERT | RoBERTa |",
+        "| --- | ---: | ---: |",
+    ]
+    for row in variant_summary:
+        lines.append(
+            f"| {row['variant_label']} | {fmt(row['distilbert'])} | {fmt(row['roberta'])} |"
+        )
+    lines.append("")
+    lines.extend(render_supplemental_results_markdown(supplemental_results or {}))
+    lines.extend(
+        [
         "## Best Trial Summary",
         "",
         "| Study | Model | Recipe | Best Trial | Val Acc | Val Macro-F1 | Test Acc | Test Macro-F1 | Train Loss | Val Loss | Test Loss | Best Epoch |",
         "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
-    ]
+        ]
+    )
     for row in sorted(rows, key=lambda item: (item.model, item.recipe, item.study_name)):
         lines.append(
             f"| {row.study_name} | {row.model} | {row.recipe} | {fmt(row.best_trial_id, 0)} | "
@@ -426,11 +565,18 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     csv_path = out_dir / "model_comparison_best_trials_summary.csv"
+    variant_csv_path = out_dir / "model_comparison_variant_test_macro_f1.csv"
+    supplemental_path = out_dir / "conceptnet_feature_results.json"
+    supplemental_csv_path = out_dir / "conceptnet_feature_results_summary.csv"
     report_path = out_dir / "model_comparison_report.md"
     loss_pdf_path = out_dir / "model_comparison_loss_over_time.pdf"
+    supplemental_results = load_supplemental_results(supplemental_path)
 
     write_csv(rows, csv_path)
-    render_markdown(rows, report_path, loss_pdf_path.name)
+    write_variant_summary_csv(build_variant_summary(rows), variant_csv_path)
+    if supplemental_results:
+        write_supplemental_results_csv(supplemental_results, supplemental_csv_path)
+    render_markdown(rows, report_path, loss_pdf_path.name, supplemental_results=supplemental_results)
     render_loss_plot_pdf(loss_series, loss_pdf_path)
 
 

@@ -116,3 +116,165 @@ def test_default_output_dir_uses_common_parent(tmp_path):
     out_dir = report.default_output_dir(study_dirs)
 
     assert out_dir == tmp_path / "runs" / "variant2_tuning"
+
+
+def test_build_variant_summary_pivots_transformer_results():
+    rows = [
+        report.StudyRow(
+            study_name="distilbert_headline_only",
+            model="distilbert",
+            recipe="headline_only",
+            best_trial_id=4,
+            objective_metric="val.macro_f1",
+            val_accuracy=0.91,
+            val_macro_f1=0.90,
+            test_accuracy=0.89,
+            test_macro_f1=0.88,
+            train_loss=0.3,
+            val_loss=0.4,
+            test_loss=0.5,
+            best_epoch=3,
+            metrics_path=None,
+            artifact_path=None,
+        ),
+        report.StudyRow(
+            study_name="roberta_headline_only",
+            model="roberta",
+            recipe="headline_only",
+            best_trial_id=7,
+            objective_metric="val.macro_f1",
+            val_accuracy=0.93,
+            val_macro_f1=0.92,
+            test_accuracy=0.90,
+            test_macro_f1=0.89,
+            train_loss=0.2,
+            val_loss=0.3,
+            test_loss=0.4,
+            best_epoch=4,
+            metrics_path=None,
+            artifact_path=None,
+        ),
+        report.StudyRow(
+            study_name="tfidf_nb_headline_only",
+            model="tfidf_nb",
+            recipe="headline_only",
+            best_trial_id=1,
+            objective_metric="val.macro_f1",
+            val_accuracy=0.7,
+            val_macro_f1=0.7,
+            test_accuracy=0.69,
+            test_macro_f1=0.68,
+            train_loss=None,
+            val_loss=None,
+            test_loss=None,
+            best_epoch=None,
+            metrics_path=None,
+            artifact_path=None,
+        ),
+    ]
+
+    summary = report.build_variant_summary(rows)
+
+    assert summary == [
+        {
+            "variant": "headline_only",
+            "variant_label": "headline only",
+            "distilbert": 0.88,
+            "roberta": 0.89,
+        }
+    ]
+
+
+def test_render_markdown_includes_variant_summary_table(tmp_path):
+    out_path = tmp_path / "report.md"
+    rows = [
+        report.StudyRow(
+            study_name="distilbert_headline_section",
+            model="distilbert",
+            recipe="headline_section",
+            best_trial_id=16,
+            objective_metric="val.macro_f1",
+            val_accuracy=0.95,
+            val_macro_f1=0.9499,
+            test_accuracy=0.9467,
+            test_macro_f1=0.9467,
+            train_loss=0.1,
+            val_loss=0.2,
+            test_loss=0.3,
+            best_epoch=5,
+            metrics_path=None,
+            artifact_path=None,
+        ),
+        report.StudyRow(
+            study_name="roberta_headline_section",
+            model="roberta",
+            recipe="headline_section",
+            best_trial_id=12,
+            objective_metric="val.macro_f1",
+            val_accuracy=0.96,
+            val_macro_f1=0.9555,
+            test_accuracy=0.9512,
+            test_macro_f1=0.9512,
+            train_loss=0.1,
+            val_loss=0.2,
+            test_loss=0.3,
+            best_epoch=4,
+            metrics_path=None,
+            artifact_path=None,
+        ),
+    ]
+
+    report.render_markdown(rows, out_path, "loss.pdf")
+
+    content = out_path.read_text(encoding="utf-8")
+    assert "## Best Test Macro-F1 by Data Variant" in content
+    assert "| Data Variant | DistilBERT | RoBERTa |" in content
+    assert "| headline section | 0.9467 | 0.9512 |" in content
+
+
+def test_render_markdown_includes_supplemental_results_tables(tmp_path):
+    out_path = tmp_path / "report.md"
+    rows = [
+        report.StudyRow(
+            study_name="distilbert_headline_only",
+            model="distilbert",
+            recipe="headline_only",
+            best_trial_id=4,
+            objective_metric="val.macro_f1",
+            val_accuracy=0.91,
+            val_macro_f1=0.90,
+            test_accuracy=0.89,
+            test_macro_f1=0.88,
+            train_loss=0.3,
+            val_loss=0.4,
+            test_loss=0.5,
+            best_epoch=3,
+            metrics_path=None,
+            artifact_path=None,
+        )
+    ]
+    supplemental = {
+        "title": "ConceptNet Feature Ablation on Test Set",
+        "description": "Additional project model results.",
+        "models": [
+            {"id": "distilbert_with", "label": "DistilBERT (With)"},
+            {"id": "distilbert_without", "label": "DistilBERT (Without)"},
+        ],
+        "variants": [
+            {"id": "headline", "label": "Headline"},
+        ],
+        "results": {
+            "headline": {
+                "distilbert_with": {"loss": 1.1996, "accuracy": 0.9132, "precision": 0.9289, "recall": 0.9120, "f1": 0.9204},
+                "distilbert_without": {"loss": 1.1304, "accuracy": 0.9132, "precision": 0.9304, "recall": 0.9103, "f1": 0.9202},
+            }
+        },
+    }
+
+    report.render_markdown(rows, out_path, "loss.pdf", supplemental_results=supplemental)
+
+    content = out_path.read_text(encoding="utf-8")
+    assert "## ConceptNet Feature Ablation on Test Set" in content
+    assert "### F1-Score" in content
+    assert "| Data Variant | DistilBERT (With) | DistilBERT (Without) |" in content
+    assert "| Headline | 0.9204 | 0.9202 |" in content

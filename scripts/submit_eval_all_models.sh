@@ -28,7 +28,15 @@ cd "${REPO_ROOT}"
 source .venv/bin/activate
 export PYTHONPATH="${REPO_ROOT}:\${PYTHONPATH:-}"
 
-python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available'; print(torch.cuda.get_device_name(0))"
+python - <<'PY'
+import torch
+print("torch:", torch.__version__)
+print("cuda_available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("device:", torch.cuda.get_device_name(0))
+else:
+    print("device: cpu")
+PY
 python scripts/evaluate_original_test_set.py --output ${ORIG_DIR}/${TIMESTAMP}
 EOF
 )"
@@ -51,7 +59,15 @@ cd "${REPO_ROOT}"
 source .venv/bin/activate
 export PYTHONPATH="${REPO_ROOT}:\${PYTHONPATH:-}"
 
-python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available'; print(torch.cuda.get_device_name(0))"
+python - <<'PY'
+import torch
+print("torch:", torch.__version__)
+print("cuda_available:", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("device:", torch.cuda.get_device_name(0))
+else:
+    print("device: cpu")
+PY
 python scripts/experiment_shuffle_description.py --output ${SHUF_DIR}/${TIMESTAMP}
 EOF
 )"

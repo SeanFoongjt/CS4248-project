@@ -13,9 +13,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from tqdm import tqdm
+from typing import Set
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_score, recall_score, f1_score
@@ -79,7 +80,8 @@ class TransformerGNNConfig:
     export_visualisations: bool = True
     output_dir: str = "result"
     weight_decay: float = 0.01
-    text_format: str = "headline" # Options: 'headline', 'headline_section', 'all'  
+    text_format: str = "headline" # Options: 'headline', 'headline_section', 'all'
+    selected_pos: Set[str] = field(default_factory=lambda: {"NOUN", "VERB", "ADJ", "PROPN"})  # Set of POS tags to consider for ConceptNet linking (e.g., {"NOUN", "VERB", "ADJ", "PROPN"})  
  
  
 # ─────────────────────────────────────────────
@@ -93,7 +95,8 @@ class SarcasmGraphDataset(Dataset):
         tokenizer,
         max_length: int,
         use_conceptnet: bool = True,
-        text_format: str = "headline"
+        text_format: str = "headline",
+        selected_pos: Optional[set[str]] = {"NOUN", "VERB", "ADJ", "PROPN"}
     ):
         self.samples = samples
         self.tokenizer = tokenizer
@@ -101,6 +104,7 @@ class SarcasmGraphDataset(Dataset):
         self.use_conceptnet = use_conceptnet
         self.text_format = text_format
         self.graphs = []
+        self.selected_pos = selected_pos or {"NOUN", "VERB", "ADJ", "PROPN"}
         
         self._build_graphs()
 
@@ -151,7 +155,7 @@ class SarcasmGraphDataset(Dataset):
             if self.use_conceptnet:
                 tokens = self.tokenizer.convert_ids_to_tokens(input_ids)
                 doc = nlp(spacy_text.lower())
-                valid_pos = {"NOUN", "VERB", "ADJ", "PROPN"}
+                valid_pos = self.selected_pos
                 concepts_in_text = [token.lemma_.lower().strip().replace(" ", "_") 
                                     for token in doc if token.pos_ in valid_pos and not token.is_stop]
                 concepts_in_text = list(dict.fromkeys(concepts_in_text))
@@ -476,8 +480,8 @@ def build_pipeline(
  
     tokenizer = AutoTokenizer.from_pretrained(cfg.pretrained_name)
  
-    train_ds = SarcasmGraphDataset(train_samples, tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet, text_format=cfg.text_format)
-    val_ds   = SarcasmGraphDataset(val_samples,   tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet, text_format=cfg.text_format)
+    train_ds = SarcasmGraphDataset(train_samples, tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet, text_format=cfg.text_format, selected_pos=cfg.selected_pos)
+    val_ds   = SarcasmGraphDataset(val_samples,   tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet, text_format=cfg.text_format, selected_pos=cfg.selected_pos)
     
     if cfg.use_conceptnet:
         global_state.save_cache(global_state.conceptnet_cache)
@@ -515,6 +519,7 @@ def build_pipeline(
         'max_length': cfg.max_length,
         'num_epochs': cfg.num_epochs,
         'batch_size': cfg.batch_size,
+        'selected_pos': list(cfg.selected_pos)
     }, output_path)
     
     logging.info(f"Graph-augmented {cfg.model_type.capitalize()} Checkpoint saved to {output_path}.")
@@ -590,6 +595,7 @@ def predict(texts: list[str], model_path: str = "sarcasm_gnn_model.pt", output_d
     num_epochs = checkpoint.get('num_epochs', 3)
     learning_rate = checkpoint.get('learning_rate', 2e-5)
     batch_size = checkpoint.get('batch_size', 32)
+    selected_pos = set(checkpoint.get('selected_pos', ["NOUN", "VERB", "ADJ", "PROPN"]))
 
     cfg = TransformerGNNConfig(
         model_type=model_type,
@@ -605,7 +611,8 @@ def predict(texts: list[str], model_path: str = "sarcasm_gnn_model.pt", output_d
         max_length=max_length,
         num_epochs=num_epochs,
         learning_rate=learning_rate,
-        batch_size=batch_size
+        batch_size=batch_size,
+        selected_pos=selected_pos
     )
     tokenizer = AutoTokenizer.from_pretrained(cfg.pretrained_name)
 
@@ -622,7 +629,7 @@ def predict(texts: list[str], model_path: str = "sarcasm_gnn_model.pt", output_d
             item["label"] = 0
             dummy_samples.append(item)
 
-    eval_ds = SarcasmGraphDataset(dummy_samples, tokenizer, cfg.max_length, use_conceptnet=use_conceptnet, text_format=text_format)
+    eval_ds = SarcasmGraphDataset(dummy_samples, tokenizer, cfg.max_length, use_conceptnet=use_conceptnet, text_format=text_format, selected_pos=cfg.selected_pos)
     eval_loader = DataLoader(eval_ds, batch_size=cfg.batch_size, collate_fn=graph_collate_fn)
 
     results = []
@@ -672,6 +679,15 @@ if __name__ == "__main__":
     parser.add_argument("--predict", action="store_true", help="Run in inference mode rather than training")
     parser.add_argument("--model-path", type=str, default="sarcasm_gnn_model.pt", help="Path to the trained model checkpoint (for prediction)")
 
+    parser.add_argument(
+        '--pos',
+        nargs='+',           # Gathers 1 or more arguments into a list
+        type=str.upper,      # Automatically converts lowercase inputs to uppercase
+        choices={"NOUN", "VERB", "ADJ", "PROPN"},   # Restricts inputs strictly to your set
+        default=["NOUN", "VERB", "ADJ", "PROPN"], # Optional: Set a default if the flag isn't called
+        help=f"Specify one or more POS tags. Allowed values: {', '.join({"NOUN", "VERB", "ADJ", "PROPN"})}"
+    )
+
     args = parser.parse_args()
 
     # Apply global custom logger rules 
@@ -685,6 +701,8 @@ if __name__ == "__main__":
         pretrained_name = "roberta-base" if args.model_type == "roberta" else "distilbert-base-uncased"
     else:
         pretrained_name = args.pretrained_name
+
+    selected_pos = set(args.pos)
 
     samples = []
     
@@ -742,7 +760,8 @@ if __name__ == "__main__":
             use_conceptnet=not args.no_conceptnet,
             export_visualisations=not args.no_visualisations,
             output_dir=args.output,
-            text_format=args.text_format
+            text_format=args.text_format,
+            selected_pos=selected_pos
         )
         
         logging.info("\n--- Initiating Model Pipeline ---")
@@ -752,7 +771,7 @@ if __name__ == "__main__":
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         tokenizer = AutoTokenizer.from_pretrained(cfg.pretrained_name)
         
-        test_ds = SarcasmGraphDataset(data_test, tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet, text_format=cfg.text_format)
+        test_ds = SarcasmGraphDataset(data_test, tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet, text_format=cfg.text_format, selected_pos=cfg.selected_pos)
         test_loader = DataLoader(test_ds, batch_size=cfg.batch_size, collate_fn=graph_collate_fn)
         loss_fn = nn.CrossEntropyLoss()
         

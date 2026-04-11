@@ -47,13 +47,35 @@ def main():
     parser.add_argument("--text-format", type=str, choices=["headline", "headline_section", "all"], default="headline", help="Which text fields to construct the graph from")
     parser.add_argument("--model-type", type=str, choices=["roberta", "distilbert"], default="roberta", help="Which transformer architecture to use")
     parser.add_argument("--pretrained-name", type=str, default=None, help="HuggingFace model name (defaults to roberta-base or distilbert-base-uncased)")
+
+    parser.add_argument(
+        '--pos',
+        nargs='+',           # Gathers 1 or more arguments into a list
+        type=str.upper,      # Automatically converts lowercase inputs to uppercase
+        choices={"NOUN", "VERB", "ADJ", "PROPN"},   # Restricts inputs strictly to your set
+        default=["NOUN", "VERB", "ADJ", "PROPN"], # Optional: Set a default if the flag isn't called
+        help=f"Specify one or more POS tags. Allowed values: {', '.join({"NOUN", "VERB", "ADJ", "PROPN"})}"
+    )
     
     args = parser.parse_args()
+
+    selected_pos = set(args.pos)
     
     log_path = os.path.join(args.output, f"training_log_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log")
     setup_logger(path=log_path)
 
     set_global_seed(args.seed)
+
+    logging.info(f"Starting comprehensive hyperparameter tuning with the following settings:")
+    logging.info(f"  Input Directory: {args.input}")
+    logging.info(f"  Output Directory: {args.output}")
+    logging.info(f"  Number of Trials: {args.n_trials}")
+    logging.info(f"  Random Seed: {args.seed}")
+    logging.info(f"  Use ConceptNet: {not args.no_conceptnet}")
+    logging.info(f"  Text Format: {args.text_format}")
+    logging.info(f"  Model Type: {args.model_type}")
+    logging.info(f"  Pretrained Model: {args.pretrained_name if args.pretrained_name else 'Default'}")
+    logging.info(f"  Selected POS Tags: {', '.join(selected_pos)}")
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -97,6 +119,7 @@ def main():
             output_dir = args.output,
             model_type = args.model_type,
             pretrained_name = pretrained_name,
+            selected_pos=selected_pos,
             
             # --- Tuned Hyperparameters ---
             max_length = trial.suggest_categorical("max_length", [128, 256, 512]),
@@ -118,9 +141,9 @@ def main():
 
         tokenizer = AutoTokenizer.from_pretrained(cfg.pretrained_name)
 
-        train_ds = SarcasmGraphDataset(data_train, tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet, text_format=cfg.text_format)
-        val_ds   = SarcasmGraphDataset(data_valid, tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet, text_format=cfg.text_format)
-        
+        train_ds = SarcasmGraphDataset(data_train, tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet, text_format=cfg.text_format, selected_pos=cfg.selected_pos)
+        val_ds   = SarcasmGraphDataset(data_valid, tokenizer, cfg.max_length, use_conceptnet=cfg.use_conceptnet, text_format=cfg.text_format, selected_pos=cfg.selected_pos)
+
         if cfg.use_conceptnet:
             global_state.save_cache(global_state.conceptnet_cache)
 
@@ -212,14 +235,15 @@ def main():
         warmup_ratio=best_params["warmup_ratio"],
         edge_embed_dim=best_params["edge_embed_dim"],
         use_conceptnet=not args.no_conceptnet,
-        weight_decay=best_params["weight_decay"]
+        weight_decay=best_params["weight_decay"],
+        selected_pos=selected_pos
     )
 
     tokenizer = AutoTokenizer.from_pretrained(final_cfg.pretrained_name)
 
-    train_ds = SarcasmGraphDataset(data_train, tokenizer, final_cfg.max_length, use_conceptnet=final_cfg.use_conceptnet, text_format=final_cfg.text_format)
-    val_ds   = SarcasmGraphDataset(data_valid, tokenizer, final_cfg.max_length, use_conceptnet=final_cfg.use_conceptnet, text_format=final_cfg.text_format)
-    test_ds  = SarcasmGraphDataset(data_test, tokenizer, final_cfg.max_length, use_conceptnet=final_cfg.use_conceptnet, text_format=final_cfg.text_format)
+    train_ds = SarcasmGraphDataset(data_train, tokenizer, final_cfg.max_length, use_conceptnet=final_cfg.use_conceptnet, text_format=final_cfg.text_format, selected_pos=final_cfg.selected_pos)
+    val_ds   = SarcasmGraphDataset(data_valid, tokenizer, final_cfg.max_length, use_conceptnet=final_cfg.use_conceptnet, text_format=final_cfg.text_format, selected_pos=final_cfg.selected_pos)
+    test_ds  = SarcasmGraphDataset(data_test, tokenizer, final_cfg.max_length, use_conceptnet=final_cfg.use_conceptnet, text_format=final_cfg.text_format, selected_pos=final_cfg.selected_pos)
 
     train_loader = DataLoader(train_ds, batch_size=final_cfg.batch_size, shuffle=True, collate_fn=graph_collate_fn)
     val_loader   = DataLoader(val_ds, batch_size=final_cfg.batch_size, collate_fn=graph_collate_fn)
@@ -258,6 +282,7 @@ def main():
         'max_length': final_cfg.max_length,
         'num_epochs': final_cfg.num_epochs,
         'batch_size': final_cfg.batch_size,
+        'selected_pos': final_cfg.selected_pos
     }, output_path)
     logging.info(f"Final tuned model checkpoint saved to {output_path}.")
 

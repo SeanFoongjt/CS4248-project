@@ -23,6 +23,7 @@ cat > "${SBATCH_PATH}" <<EOF
 set -euo pipefail
 cd "\${SLURM_SUBMIT_DIR:-\$PWD}"
 source .venv/bin/activate
+export PYTHONPATH="\$PWD:\${PYTHONPATH:-}"
 
 python -c "import torch; assert torch.cuda.is_available(), 'CUDA not available'; print(torch.cuda.get_device_name(0))"
 python scripts/experiment_random_section_replacement.py --output "${OUTPUT_DIR}"

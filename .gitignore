@@ -228,6 +228,8 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Custom ignore rules
+runs/
+data/
 result\
 visualisations\
 *.png

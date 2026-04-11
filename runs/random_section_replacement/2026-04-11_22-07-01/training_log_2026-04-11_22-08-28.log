@@ -1,0 +1,115 @@
+2026-04-11 22:08:28,034 - Evaluating 4 checkpoint(s):
+2026-04-11 22:08:28,035 -  - result/distilbert_all_with_conceptnet_546578/final_best_model/sarcasm_gnn_model_tuned_distilbert_2026-04-07_01-30-37.pt
+2026-04-11 22:08:28,036 -  - result/distilbert_all_without_conceptnet_546579/final_best_model/sarcasm_gnn_model_tuned_distilbert_2026-04-06_14-45-50.pt
+2026-04-11 22:08:28,037 -  - result/roberta_all_with_conceptnet_546571/final_best_model/sarcasm_gnn_model_tuned_roberta_2026-04-06_13-01-13.pt
+2026-04-11 22:08:28,038 -  - result/roberta_all_without_conceptnet_546572/final_best_model/sarcasm_gnn_model_tuned_roberta_2026-04-06_08-45-18.pt
+2026-04-11 22:08:28,041 - Loaded 30 non-missing replacement section labels.
+2026-04-11 22:08:28,557 - Loaded 21880 total samples from data/Preprocessed_Article_Section_Description.json.
+2026-04-11 22:08:28,563 - Recovered test split with 4376 samples using seed=42.
+2026-04-11 22:08:28,587 - Randomly replaced 4162/4162 non-missing article sections.
+2026-04-11 22:08:28,588 - Using device: cuda
+2026-04-11 22:08:28,589 - Evaluating random-section test set with checkpoint: result/distilbert_all_with_conceptnet_546578/final_best_model/sarcasm_gnn_model_tuned_distilbert_2026-04-07_01-30-37.pt
+2026-04-11 22:08:29,647 - HTTP Request: HEAD https://huggingface.co/distilbert-base-uncased/resolve/main/config.json "HTTP/1.1 200 OK"
+2026-04-11 22:08:29,649 - Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+2026-04-11 22:08:31,120 - HTTP Request: HEAD https://huggingface.co/distilbert-base-uncased/resolve/main/config.json "HTTP/1.1 200 OK"
+2026-04-11 22:08:31,375 - HTTP Request: HEAD https://huggingface.co/distilbert-base-uncased/resolve/main/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-04-11 22:08:31,625 - HTTP Request: GET https://huggingface.co/api/models/distilbert-base-uncased/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 307 Temporary Redirect"
+2026-04-11 22:08:31,880 - HTTP Request: GET https://huggingface.co/api/models/distilbert/distilbert-base-uncased/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-04-11 22:08:32,133 - HTTP Request: GET https://huggingface.co/api/models/distilbert-base-uncased/tree/main?recursive=true&expand=false "HTTP/1.1 307 Temporary Redirect"
+2026-04-11 22:08:32,370 - HTTP Request: GET https://huggingface.co/api/models/distilbert/distilbert-base-uncased/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-04-11 22:09:53,609 - 
+=========================================
+  FINAL RANDOM SECTION REPLACEMENT RESULTS
+=========================================
+Model:          result/distilbert_all_with_conceptnet_546578/final_best_model/sarcasm_gnn_model_tuned_distilbert_2026-04-07_01-30-37.pt
+Input:          data/Preprocessed_Article_Section_Description.json
+Section Counts: data/article_section_counts/preprocessed_article_section_counts_by_source.csv
+Seed:           42
+Model Type:     distilbert
+Use ConceptNet: True
+Text Format:    all
+Loss:           0.1762
+Accuracy:       0.9751
+Precision:      0.9856
+Recall:         0.9689
+F1-Score:       0.9772
+=========================================
+
+2026-04-11 22:09:53,611 - Evaluating random-section test set with checkpoint: result/distilbert_all_without_conceptnet_546579/final_best_model/sarcasm_gnn_model_tuned_distilbert_2026-04-06_14-45-50.pt
+2026-04-11 22:09:54,517 - HTTP Request: HEAD https://huggingface.co/distilbert-base-uncased/resolve/main/config.json "HTTP/1.1 200 OK"
+2026-04-11 22:09:55,081 - HTTP Request: HEAD https://huggingface.co/distilbert-base-uncased/resolve/main/config.json "HTTP/1.1 200 OK"
+2026-04-11 22:09:55,323 - HTTP Request: HEAD https://huggingface.co/distilbert-base-uncased/resolve/main/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-04-11 22:09:55,556 - HTTP Request: GET https://huggingface.co/api/models/distilbert-base-uncased/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 307 Temporary Redirect"
+2026-04-11 22:09:55,788 - HTTP Request: GET https://huggingface.co/api/models/distilbert/distilbert-base-uncased/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-04-11 22:09:56,025 - HTTP Request: GET https://huggingface.co/api/models/distilbert-base-uncased/tree/main?recursive=true&expand=false "HTTP/1.1 307 Temporary Redirect"
+2026-04-11 22:09:56,265 - HTTP Request: GET https://huggingface.co/api/models/distilbert/distilbert-base-uncased/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-04-11 22:10:03,159 - 
+=========================================
+  FINAL RANDOM SECTION REPLACEMENT RESULTS
+=========================================
+Model:          result/distilbert_all_without_conceptnet_546579/final_best_model/sarcasm_gnn_model_tuned_distilbert_2026-04-06_14-45-50.pt
+Input:          data/Preprocessed_Article_Section_Description.json
+Section Counts: data/article_section_counts/preprocessed_article_section_counts_by_source.csv
+Seed:           42
+Model Type:     distilbert
+Use ConceptNet: False
+Text Format:    all
+Loss:           0.2158
+Accuracy:       0.9744
+Precision:      0.9856
+Recall:         0.9676
+F1-Score:       0.9765
+=========================================
+
+2026-04-11 22:10:03,161 - Evaluating random-section test set with checkpoint: result/roberta_all_with_conceptnet_546571/final_best_model/sarcasm_gnn_model_tuned_roberta_2026-04-06_13-01-13.pt
+2026-04-11 22:10:04,503 - HTTP Request: HEAD https://huggingface.co/roberta-base/resolve/main/config.json "HTTP/1.1 200 OK"
+2026-04-11 22:10:06,608 - HTTP Request: HEAD https://huggingface.co/roberta-base/resolve/main/config.json "HTTP/1.1 200 OK"
+2026-04-11 22:10:06,879 - HTTP Request: HEAD https://huggingface.co/roberta-base/resolve/main/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-04-11 22:10:07,130 - HTTP Request: GET https://huggingface.co/api/models/roberta-base/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 307 Temporary Redirect"
+2026-04-11 22:10:07,803 - HTTP Request: GET https://huggingface.co/api/models/FacebookAI/roberta-base/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-04-11 22:10:08,051 - HTTP Request: GET https://huggingface.co/api/models/roberta-base/tree/main?recursive=true&expand=false "HTTP/1.1 307 Temporary Redirect"
+2026-04-11 22:10:08,298 - HTTP Request: GET https://huggingface.co/api/models/FacebookAI/roberta-base/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-04-11 22:11:26,426 - 
+=========================================
+  FINAL RANDOM SECTION REPLACEMENT RESULTS
+=========================================
+Model:          result/roberta_all_with_conceptnet_546571/final_best_model/sarcasm_gnn_model_tuned_roberta_2026-04-06_13-01-13.pt
+Input:          data/Preprocessed_Article_Section_Description.json
+Section Counts: data/article_section_counts/preprocessed_article_section_counts_by_source.csv
+Seed:           42
+Model Type:     roberta
+Use ConceptNet: True
+Text Format:    all
+Loss:           0.1352
+Accuracy:       0.9849
+Precision:      0.9883
+Recall:         0.9842
+F1-Score:       0.9863
+=========================================
+
+2026-04-11 22:11:26,428 - Evaluating random-section test set with checkpoint: result/roberta_all_without_conceptnet_546572/final_best_model/sarcasm_gnn_model_tuned_roberta_2026-04-06_08-45-18.pt
+2026-04-11 22:11:27,654 - HTTP Request: HEAD https://huggingface.co/roberta-base/resolve/main/config.json "HTTP/1.1 200 OK"
+2026-04-11 22:11:28,399 - HTTP Request: HEAD https://huggingface.co/roberta-base/resolve/main/config.json "HTTP/1.1 200 OK"
+2026-04-11 22:11:28,647 - HTTP Request: HEAD https://huggingface.co/roberta-base/resolve/main/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-04-11 22:11:28,883 - HTTP Request: GET https://huggingface.co/api/models/roberta-base/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 307 Temporary Redirect"
+2026-04-11 22:11:29,111 - HTTP Request: GET https://huggingface.co/api/models/FacebookAI/roberta-base/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-04-11 22:11:29,342 - HTTP Request: GET https://huggingface.co/api/models/roberta-base/tree/main?recursive=true&expand=false "HTTP/1.1 307 Temporary Redirect"
+2026-04-11 22:11:29,581 - HTTP Request: GET https://huggingface.co/api/models/FacebookAI/roberta-base/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-04-11 22:12:02,170 - 
+=========================================
+  FINAL RANDOM SECTION REPLACEMENT RESULTS
+=========================================
+Model:          result/roberta_all_without_conceptnet_546572/final_best_model/sarcasm_gnn_model_tuned_roberta_2026-04-06_08-45-18.pt
+Input:          data/Preprocessed_Article_Section_Description.json
+Section Counts: data/article_section_counts/preprocessed_article_section_counts_by_source.csv
+Seed:           42
+Model Type:     roberta
+Use ConceptNet: False
+Text Format:    all
+Loss:           0.1468
+Accuracy:       0.9842
+Precision:      0.9887
+Recall:         0.9826
+F1-Score:       0.9856
+=========================================
+

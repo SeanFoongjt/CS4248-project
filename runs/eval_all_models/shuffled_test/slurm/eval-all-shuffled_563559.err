@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/home/e/e1129930/CS4248-project/.venv/lib/python3.12/site-packages/torch/__init__.py", line 442, in <module>
+    from torch._C import *  # noqa: F403
+    ^^^^^^^^^^^^^^^^^^^^^^
+ImportError: /home/e/e1129930/CS4248-project/.venv/lib/python3.12/site-packages/torch/lib/libtorch_cuda.so: undefined symbol: ncclDevCommDestroy

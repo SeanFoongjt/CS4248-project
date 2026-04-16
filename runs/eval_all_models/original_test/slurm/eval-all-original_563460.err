@@ -1,0 +1,11 @@
+Traceback (most recent call last):
+  File "/home/e/e1129930/CS4248-project/scripts/evaluate_original_test_set.py", line 145, in <module>
+    main()
+  File "/home/e/e1129930/CS4248-project/scripts/evaluate_original_test_set.py", line 87, in main
+    result = evaluate_checkpoint(model_path, data_test, args.output, device)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/e/e1129930/CS4248-project/utils/experiment_eval.py", line 123, in evaluate_checkpoint
+    from models.general_conceptnet_gnn_pipeline import SarcasmGraphDataset, graph_collate_fn, evaluate
+  File "/home/e/e1129930/CS4248-project/models/general_conceptnet_gnn_pipeline.py", line 25, in <module>
+    from torch_geometric.nn import GATv2Conv, RGCNConv
+ModuleNotFoundError: No module named 'torch_geometric'

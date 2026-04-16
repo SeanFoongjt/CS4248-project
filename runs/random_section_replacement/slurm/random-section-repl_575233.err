@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "/home/e/e1129930/CS4248-project/scripts/experiment_random_section_replacement.py", line 220, in <module>
+    main()
+  File "/home/e/e1129930/CS4248-project/scripts/experiment_random_section_replacement.py", line 162, in main
+    section_labels, section_weights = load_section_pool(args.section_counts)
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/e/e1129930/CS4248-project/utils/section_replacement.py", line 24, in load_section_pool
+    with Path(section_counts_path).open("r", encoding="utf-8", newline="") as handle:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/pathlib.py", line 1015, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'data/article_section_counts/preprocessed_article_section_counts_by_source.csv'

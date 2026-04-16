@@ -228,10 +228,13 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Custom ignore rules
-run/
 runs/
-result\
-visualisations\
+data/
+
+result/
+visualisations/
+*.png
+*.csv
 *url*.txt
 Thumbs.db
 sandboc.ipynb

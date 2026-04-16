@@ -1,0 +1,33 @@
+section,total_count,onion_count,huff_count
+news,7608,7025,583
+politics,4338,1709,2629
+entertainment,2646,1040,1606
+<missing>,984,640,344
+other,700,627,73
+voices,682,0,682
+lifestyle,515,187,328
+world,460,61,399
+business,390,133,257
+family,379,51,328
+sports,354,99,255
+technology,318,183,135
+health,244,54,190
+style,223,0,223
+crime,216,14,202
+women,216,2,214
+arts and culture,210,0,210
+religion,201,15,186
+education,166,50,116
+impact,153,0,153
+travel,138,13,125
+relationships,120,32,88
+environment,117,2,115
+nature,116,37,79
+science,107,18,89
+food and drink,82,0,82
+books,58,6,52
+opinion,51,0,51
+people,45,30,15
+money,38,19,19
+work,4,4,0
+"news, other",1,1,0

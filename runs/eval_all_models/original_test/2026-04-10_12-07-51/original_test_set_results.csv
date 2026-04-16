@@ -1,0 +1,5 @@
+model_path,model_type,pretrained_name,use_conceptnet,text_format,max_length,batch_size,loss,accuracy,precision,recall,f1
+result/distilbert_all_with_conceptnet_546578/final_best_model/sarcasm_gnn_model_tuned_distilbert_2026-04-07_01-30-37.pt,distilbert,distilbert-base-uncased,True,all,256,32,0.026057046096118034,0.9963436928702011,0.9950331125827815,0.9983388704318937,0.9966832504145937
+result/distilbert_all_without_conceptnet_546579/final_best_model/sarcasm_gnn_model_tuned_distilbert_2026-04-06_14-45-50.pt,distilbert,distilbert-base-uncased,False,all,128,16,0.04345984567537792,0.9933729433272395,0.9933637494815429,0.9946013289036545,0.9939821539738535
+result/roberta_all_with_conceptnet_546571/final_best_model/sarcasm_gnn_model_tuned_roberta_2026-04-06_13-01-13.pt,roberta,roberta-base,True,all,128,16,0.028330939325562545,0.9961151736745887,0.9950310559006211,0.9979235880398671,0.9964752228903172
+result/roberta_all_without_conceptnet_546572/final_best_model/sarcasm_gnn_model_tuned_roberta_2026-04-06_08-45-18.pt,roberta,roberta-base,False,all,512,32,0.026711324961898382,0.9970292504570384,0.9958592132505176,0.9987541528239202,0.9973045822102425

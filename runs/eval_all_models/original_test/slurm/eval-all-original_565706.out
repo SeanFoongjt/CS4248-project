@@ -1,0 +1,69 @@
+NVIDIA H100 NVL MIG 3g.47gb
+
+=========================================
+        FINAL ORIGINAL TEST RESULTS      
+=========================================
+Model:         result/distilbert_all_with_conceptnet_546578/final_best_model/sarcasm_gnn_model_tuned_distilbert_2026-04-07_01-30-37.pt
+Input:         data/Preprocessed_Article_Section_Description.json
+Seed:          42
+Model Type:    distilbert
+Use ConceptNet:True
+Text Format:   all
+Loss:          0.0261
+Accuracy:      0.9963
+Precision:     0.9950
+Recall:        0.9983
+F1-Score:      0.9967
+=========================================
+
+
+=========================================
+        FINAL ORIGINAL TEST RESULTS      
+=========================================
+Model:         result/distilbert_all_without_conceptnet_546579/final_best_model/sarcasm_gnn_model_tuned_distilbert_2026-04-06_14-45-50.pt
+Input:         data/Preprocessed_Article_Section_Description.json
+Seed:          42
+Model Type:    distilbert
+Use ConceptNet:False
+Text Format:   all
+Loss:          0.0435
+Accuracy:      0.9934
+Precision:     0.9934
+Recall:        0.9946
+F1-Score:      0.9940
+=========================================
+
+
+=========================================
+        FINAL ORIGINAL TEST RESULTS      
+=========================================
+Model:         result/roberta_all_with_conceptnet_546571/final_best_model/sarcasm_gnn_model_tuned_roberta_2026-04-06_13-01-13.pt
+Input:         data/Preprocessed_Article_Section_Description.json
+Seed:          42
+Model Type:    roberta
+Use ConceptNet:True
+Text Format:   all
+Loss:          0.0283
+Accuracy:      0.9961
+Precision:     0.9950
+Recall:        0.9979
+F1-Score:      0.9965
+=========================================
+
+
+=========================================
+        FINAL ORIGINAL TEST RESULTS      
+=========================================
+Model:         result/roberta_all_without_conceptnet_546572/final_best_model/sarcasm_gnn_model_tuned_roberta_2026-04-06_08-45-18.pt
+Input:         data/Preprocessed_Article_Section_Description.json
+Seed:          42
+Model Type:    roberta
+Use ConceptNet:False
+Text Format:   all
+Loss:          0.0267
+Accuracy:      0.9970
+Precision:     0.9959
+Recall:        0.9988
+F1-Score:      0.9973
+=========================================
+

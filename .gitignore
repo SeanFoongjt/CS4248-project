@@ -228,6 +228,9 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Custom ignore rules
+run/
+runs/
+result\
 visualisations\
 *url*.txt
 Thumbs.db

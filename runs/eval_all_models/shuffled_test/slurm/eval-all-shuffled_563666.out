@@ -1,0 +1,8 @@
+NVIDIA H100 NVL MIG 3g.47gb
+Collecting en-core-web-md==3.8.0
+  Downloading https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.8.0/en_core_web_md-3.8.0-py3-none-any.whl (33.5 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 33.5/33.5 MB 3.1 MB/s  0:00:10
+Installing collected packages: en-core-web-md
+Successfully installed en-core-web-md-3.8.0
+[38;5;2m✔ Download and installation successful[0m
+You can now load the package via spacy.load('en_core_web_md')

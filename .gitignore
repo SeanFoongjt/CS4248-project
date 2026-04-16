@@ -230,8 +230,9 @@ __marimo__/
 # Custom ignore rules
 runs/
 data/
-result\
-visualisations\
+
+result/
+visualisations/
 *.png
 *.csv
 *url*.txt

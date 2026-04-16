@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/home/e/e1129930/CS4248-project/scripts/evaluate_original_test_set.py", line 145, in <module>
+    main()
+  File "/home/e/e1129930/CS4248-project/scripts/evaluate_original_test_set.py", line 69, in main
+    raise FileNotFoundError("No default `all` checkpoints were found under result/.")
+FileNotFoundError: No default `all` checkpoints were found under result/.

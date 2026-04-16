@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import json
 import logging
+import random
 from pathlib import Path
 from typing import Iterable
 
@@ -53,16 +56,46 @@ def load_samples(input_path: str | Path) -> list[dict]:
                 "headline": item.get("headline", ""),
                 "section": item.get(
                     "preprocessed_article_section",
-                    item.get("section", ""),
+                    item.get(
+                        "preprocessed_section",
+                        item.get("section", item.get("article_section", "")),
+                    ),
                 ),
                 "description": item.get(
                     "preprocessed_description",
-                    item.get("description", ""),
+                    item.get(
+                        "shuffled_preprocessed_description",
+                        item.get("description", ""),
+                    ),
                 ),
                 "label": item.get("is_sarcastic", item.get("label", 0)),
             }
         )
     return samples
+
+
+def shuffle_descriptions(samples: list[dict], bin_size: int = 5, seed: int = 42) -> list[dict]:
+    """Shuffle descriptions within coarse length bins while keeping other fields fixed."""
+    shuffled_samples = [dict(sample) for sample in samples]
+    rng = random.Random(seed)
+    bin_to_indices: dict[int, list[int]] = {}
+
+    for idx, sample in enumerate(shuffled_samples):
+        description = sample.get("description", "") or ""
+        desc_length = len(description.split())
+        bin_id = desc_length // bin_size
+        bin_to_indices.setdefault(bin_id, []).append(idx)
+
+    for indices in bin_to_indices.values():
+        descriptions = [
+            shuffled_samples[idx].get("description", "") or ""
+            for idx in indices
+        ]
+        rng.shuffle(descriptions)
+        for idx, shuffled_description in zip(indices, descriptions):
+            shuffled_samples[idx]["description"] = shuffled_description
+
+    return shuffled_samples
 
 
 def torch_load_checkpoint(model_path: str | Path, device: torch.device) -> dict:

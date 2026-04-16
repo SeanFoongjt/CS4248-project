@@ -1,0 +1,68 @@
+
+=========================================
+        FINAL SHUFFLED TEST RESULTS      
+=========================================
+Model:         result/distilbert_all_with_conceptnet_546578/final_best_model/sarcasm_gnn_model_tuned_distilbert_2026-04-07_01-30-37.pt
+Input:         data/Preprocessed_Article_Section_Description.json
+Seed:          42
+Bin Size:      5
+Model Type:    distilbert
+Use ConceptNet:True
+Text Format:   all
+Loss:          1.7687
+Accuracy:      0.8656
+Precision:     0.8782
+Recall:        0.8775
+F1-Score:      0.8779
+=========================================
+
+=========================================
+        FINAL SHUFFLED TEST RESULTS      
+=========================================
+Model:         result/distilbert_all_without_conceptnet_546579/final_best_model/sarcasm_gnn_model_tuned_distilbert_2026-04-06_14-45-50.pt
+Input:         data/Preprocessed_Article_Section_Description.json
+Seed:          42
+Bin Size:      5
+Model Type:    distilbert
+Use ConceptNet:False
+Text Format:   all
+Loss:          1.8852
+Accuracy:      0.8688
+Precision:     0.8834
+Recall:        0.8775
+F1-Score:      0.8804
+=========================================
+
+=========================================
+        FINAL SHUFFLED TEST RESULTS      
+=========================================
+Model:         result/roberta_all_with_conceptnet_546571/final_best_model/sarcasm_gnn_model_tuned_roberta_2026-04-06_13-01-13.pt
+Input:         data/Preprocessed_Article_Section_Description.json
+Seed:          42
+Bin Size:      5
+Model Type:    roberta
+Use ConceptNet:True
+Text Format:   all
+Loss:          1.8096
+Accuracy:      0.8675
+Precision:     0.8974
+Recall:        0.8571
+F1-Score:      0.8768
+=========================================
+
+=========================================
+        FINAL SHUFFLED TEST RESULTS      
+=========================================
+Model:         result/roberta_all_without_conceptnet_546572/final_best_model/sarcasm_gnn_model_tuned_roberta_2026-04-06_08-45-18.pt
+Input:         data/Preprocessed_Article_Section_Description.json
+Seed:          42
+Bin Size:      5
+Model Type:    roberta
+Use ConceptNet:False
+Text Format:   all
+Loss:          2.0051
+Accuracy:      0.8743
+Precision:     0.8980
+Recall:        0.8704
+F1-Score:      0.8840
+=========================================

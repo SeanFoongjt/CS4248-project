@@ -1,73 +1,81 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 from pathlib import Path
+from typing import Iterable
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from sklearn.metrics import f1_score, precision_score, recall_score
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer
 
+from models.general_conceptnet_gnn_pipeline import (
+    SarcasmGraphDataset,
+    TransformerGNNConfig,
+    TransformerGNNModel,
+    graph_collate_fn,
+)
 
-def discover_default_all_checkpoints(result_root: str = "result") -> list[str]:
-    """Return the four tuned checkpoints trained with the `all` recipe."""
 
+def discover_default_all_checkpoints(result_root: str | Path = "result") -> list[str]:
+    """Find tuned checkpoints for the four `all` model variants."""
     root = Path(result_root)
-    checkpoints = []
-
-    for path in root.rglob("sarcasm_gnn_model_tuned_*.pt"):
-        run_dir = path.parents[1].name
-        if "_all_" in run_dir:
-            checkpoints.append(path)
-
-    return [str(path) for path in sorted(checkpoints)]
+    candidates = sorted(root.glob("*_all_*/final_best_model/*.pt"))
+    return [str(path).replace("\\", "/") for path in candidates]
 
 
-def load_samples(input_path: str) -> list[dict]:
-    """Load either a JSONL dataset or a JSON array dataset."""
+def load_json_records(input_path: str | Path) -> list[dict]:
+    path = Path(input_path)
+    text = path.read_text(encoding="utf-8").lstrip()
 
-    with open(input_path, encoding="utf-8") as f:
-        first_non_ws = ""
-        while True:
-            pos = f.tell()
-            ch = f.read(1)
-            if not ch:
-                break
-            if not ch.isspace():
-                first_non_ws = ch
-                f.seek(pos)
-                break
+    if not text:
+        return []
 
-        if first_non_ws == "[":
-            raw_items = json.load(f)
-        else:
-            raw_items = [json.loads(line) for line in f if line.strip()]
+    if text.startswith("["):
+        return json.loads(text)
 
+    records = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if line:
+                records.append(json.loads(line))
+    return records
+
+
+def load_samples(input_path: str | Path) -> list[dict]:
+    """Load the dataset into the sample schema expected by SarcasmGraphDataset."""
     samples = []
-    for item in raw_items:
+    for item in load_json_records(input_path):
         samples.append(
             {
                 "headline": item.get("headline", ""),
                 "section": item.get(
                     "preprocessed_article_section",
-                    item.get("preprocessed_section", item.get("article_section", "")),
+                    item.get(
+                        "preprocessed_section",
+                        item.get("section", item.get("article_section", "")),
+                    ),
                 ),
                 "description": item.get(
                     "preprocessed_description",
-                    item.get("shuffled_preprocessed_description", item.get("description", "")),
+                    item.get(
+                        "shuffled_preprocessed_description",
+                        item.get("description", ""),
+                    ),
                 ),
-                "label": item.get("is_sarcastic", 0),
+                "label": item.get("is_sarcastic", item.get("label", 0)),
             }
         )
-
     return samples
 
 
 def shuffle_descriptions(samples: list[dict], bin_size: int = 5, seed: int = 42) -> list[dict]:
     """Shuffle descriptions within coarse length bins while keeping other fields fixed."""
-
     shuffled_samples = [dict(sample) for sample in samples]
     rng = random.Random(seed)
     bin_to_indices: dict[int, list[int]] = {}
@@ -79,7 +87,10 @@ def shuffle_descriptions(samples: list[dict], bin_size: int = 5, seed: int = 42)
         bin_to_indices.setdefault(bin_id, []).append(idx)
 
     for indices in bin_to_indices.values():
-        descriptions = [shuffled_samples[idx].get("description", "") or "" for idx in indices]
+        descriptions = [
+            shuffled_samples[idx].get("description", "") or ""
+            for idx in indices
+        ]
         rng.shuffle(descriptions)
         for idx, shuffled_description in zip(indices, descriptions):
             shuffled_samples[idx]["description"] = shuffled_description
@@ -87,26 +98,39 @@ def shuffle_descriptions(samples: list[dict], bin_size: int = 5, seed: int = 42)
     return shuffled_samples
 
 
-def build_model_from_checkpoint(checkpoint: dict, device: torch.device, output_dir: str):
-    from models.general_conceptnet_gnn_pipeline import TransformerGNNConfig, TransformerGNNModel
+def torch_load_checkpoint(model_path: str | Path, device: torch.device) -> dict:
+    try:
+        return torch.load(model_path, map_location=device, weights_only=False)
+    except TypeError:
+        return torch.load(model_path, map_location=device)
 
-    cfg = TransformerGNNConfig(
+
+def config_from_checkpoint(checkpoint: dict, output_dir: str | Path) -> TransformerGNNConfig:
+    return TransformerGNNConfig(
         model_type=checkpoint.get("model_type", "roberta"),
         pretrained_name=checkpoint.get("pretrained_name", "roberta-base"),
-        max_length=checkpoint.get("max_length", 128),
-        dropout=checkpoint.get("dropout", 0.1),
-        learning_rate=checkpoint.get("learning_rate", 2e-5),
+        use_conceptnet=checkpoint.get("use_conceptnet", True),
+        output_dir=str(output_dir),
+        text_format=checkpoint.get("text_format", "headline"),
         gnn_learning_rate=checkpoint.get("gnn_learning_rate", 1e-3),
-        batch_size=checkpoint.get("batch_size", 32),
-        num_epochs=checkpoint.get("num_epochs", 3),
+        dropout=checkpoint.get("dropout", 0.1),
+        weight_decay=checkpoint.get("weight_decay", 0.01),
         warmup_ratio=checkpoint.get("warmup_ratio", 0.1),
         edge_embed_dim=checkpoint.get("edge_embed_dim", 16),
-        use_conceptnet=checkpoint.get("use_conceptnet", True),
-        export_visualisations=False,
-        output_dir=output_dir,
-        weight_decay=checkpoint.get("weight_decay", 0.01),
-        text_format=checkpoint.get("text_format", "headline"),
+        max_length=checkpoint.get("max_length", 128),
+        num_epochs=checkpoint.get("num_epochs", 3),
+        learning_rate=checkpoint.get("learning_rate", 2e-5),
+        batch_size=checkpoint.get("batch_size", 32),
     )
+
+
+def build_model_from_checkpoint(
+    model_path: str | Path,
+    output_dir: str | Path,
+    device: torch.device,
+) -> tuple[TransformerGNNModel, TransformerGNNConfig, dict]:
+    checkpoint = torch_load_checkpoint(model_path, device)
+    cfg = config_from_checkpoint(checkpoint, output_dir)
 
     model = TransformerGNNModel(
         cfg,
@@ -116,101 +140,142 @@ def build_model_from_checkpoint(checkpoint: dict, device: torch.device, output_d
     model.load_state_dict(checkpoint["model_state_dict"])
     model.to(device)
     model.eval()
-    return model
+
+    return model, cfg, checkpoint
 
 
-def evaluate_checkpoint(model_path: str, samples: list[dict], output_dir: str, device: torch.device) -> dict:
-    from models.general_conceptnet_gnn_pipeline import SarcasmGraphDataset, graph_collate_fn, evaluate
-
-    checkpoint = torch.load(model_path, map_location=device)
-    model = build_model_from_checkpoint(checkpoint, device, output_dir)
-
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint["pretrained_name"])
-    test_ds = SarcasmGraphDataset(
-        samples,
-        tokenizer,
-        checkpoint["max_length"],
-        use_conceptnet=checkpoint["use_conceptnet"],
-        text_format=checkpoint["text_format"],
-    )
-    test_loader = DataLoader(
-        test_ds,
-        batch_size=checkpoint["batch_size"],
-        collate_fn=graph_collate_fn,
-    )
-
-    loss_fn = nn.CrossEntropyLoss()
-    test_loss, test_acc, test_prec, test_rec, test_f1 = evaluate(model, test_loader, loss_fn, device)
-
+def model_metadata(
+    model_path: str | Path,
+    cfg: TransformerGNNConfig,
+) -> dict:
     return {
-        "model_path": model_path,
-        "model_type": checkpoint.get("model_type", "roberta"),
-        "pretrained_name": checkpoint.get("pretrained_name", "roberta-base"),
-        "use_conceptnet": checkpoint.get("use_conceptnet", True),
-        "text_format": checkpoint.get("text_format", "headline"),
-        "max_length": checkpoint.get("max_length", 128),
-        "batch_size": checkpoint.get("batch_size", 32),
-        "loss": test_loss,
-        "accuracy": test_acc,
-        "precision": test_prec,
-        "recall": test_rec,
-        "f1": test_f1,
+        "model_path": str(model_path).replace("\\", "/"),
+        "model_type": cfg.model_type,
+        "pretrained_name": cfg.pretrained_name,
+        "use_conceptnet": cfg.use_conceptnet,
+        "text_format": cfg.text_format,
+        "max_length": cfg.max_length,
+        "batch_size": cfg.batch_size,
     }
 
 
-def predict_checkpoint(model_path: str, samples: list[dict], output_dir: str, device: torch.device) -> list[dict]:
-    from models.general_conceptnet_gnn_pipeline import SarcasmGraphDataset, graph_collate_fn
-
-    checkpoint = torch.load(model_path, map_location=device)
-    model = build_model_from_checkpoint(checkpoint, device, output_dir)
-
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint["pretrained_name"])
-    test_ds = SarcasmGraphDataset(
+def evaluate_and_predict_checkpoint(
+    model_path: str | Path,
+    samples: list[dict],
+    output_dir: str | Path,
+    device: torch.device,
+    prediction_extra_fields: Iterable[str] = (),
+) -> tuple[dict, list[dict]]:
+    """Evaluate a checkpoint and collect per-sample predictions in one graph build."""
+    model, cfg, _ = build_model_from_checkpoint(model_path, output_dir, device)
+    tokenizer = AutoTokenizer.from_pretrained(cfg.pretrained_name)
+    dataset = SarcasmGraphDataset(
         samples,
         tokenizer,
-        checkpoint["max_length"],
-        use_conceptnet=checkpoint["use_conceptnet"],
-        text_format=checkpoint["text_format"],
+        cfg.max_length,
+        use_conceptnet=cfg.use_conceptnet,
+        text_format=cfg.text_format,
     )
-    test_loader = DataLoader(
-        test_ds,
-        batch_size=checkpoint["batch_size"],
+    loader = DataLoader(
+        dataset,
+        batch_size=cfg.batch_size,
         collate_fn=graph_collate_fn,
     )
+    loss_fn = nn.CrossEntropyLoss()
 
-    predictions = []
-    model.eval()
+    total_loss = 0.0
+    all_preds = []
+    all_labels = []
+    prediction_rows = []
+    sample_offset = 0
 
     with torch.no_grad():
-        for batch in test_loader:
+        for batch in loader:
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
+            labels = batch["label"].to(device)
             edge_index = batch["edge_index"].to(device)
             edge_attr = batch["edge_attr"].to(device)
             edge_weight = batch["edge_weight"].to(device)
 
             logits = model(input_ids, attention_mask, edge_index, edge_attr, edge_weight)
-            probs = F.softmax(logits, dim=-1).cpu()
-            preds = logits.argmax(dim=-1).cpu()
-            labels = batch["label"].cpu()
-            headlines = batch["headlines"]
+            loss = loss_fn(logits, labels)
+            total_loss += loss.item()
 
-            for headline, label, pred, prob in zip(headlines, labels, preds, probs):
-                predictions.append(
-                    {
-                        "model_path": model_path,
-                        "model_type": checkpoint.get("model_type", "roberta"),
-                        "pretrained_name": checkpoint.get("pretrained_name", "roberta-base"),
-                        "use_conceptnet": checkpoint.get("use_conceptnet", True),
-                        "text_format": checkpoint.get("text_format", "headline"),
-                        "headline": headline,
-                        "true_label": int(label.item()),
-                        "predicted_label": int(pred.item()),
-                        "correct": bool(label.item() == pred.item()),
-                        "prob_not_sarcastic": float(prob[0].item()),
-                        "prob_sarcastic": float(prob[1].item()),
-                        "confidence": float(prob.max().item()),
-                    }
-                )
+            probs = F.softmax(logits, dim=-1)
+            preds = logits.argmax(dim=-1)
+            batch_size = labels.size(0)
 
-    return predictions
+            all_preds.extend(preds.cpu().tolist())
+            all_labels.extend(labels.cpu().tolist())
+
+            for local_idx in range(batch_size):
+                sample = samples[sample_offset + local_idx]
+                prob_not_sarcastic = probs[local_idx, 0].item()
+                prob_sarcastic = probs[local_idx, 1].item()
+                predicted_label = preds[local_idx].item()
+                true_label = labels[local_idx].item()
+                row = {
+                    **model_metadata(model_path, cfg),
+                    "headline": sample.get("headline", ""),
+                    "true_label": true_label,
+                    "predicted_label": predicted_label,
+                    "correct": predicted_label == true_label,
+                    "prob_not_sarcastic": prob_not_sarcastic,
+                    "prob_sarcastic": prob_sarcastic,
+                    "confidence": max(prob_not_sarcastic, prob_sarcastic),
+                }
+                for field in prediction_extra_fields:
+                    row[field] = sample.get(field, "")
+                prediction_rows.append(row)
+
+            sample_offset += batch_size
+
+    accuracy = (
+        sum(pred == label for pred, label in zip(all_preds, all_labels)) / len(all_labels)
+        if all_labels
+        else 0
+    )
+    result = {
+        **model_metadata(model_path, cfg),
+        "loss": total_loss / len(loader) if len(loader) else 0,
+        "accuracy": accuracy,
+        "precision": precision_score(all_labels, all_preds, zero_division=0),
+        "recall": recall_score(all_labels, all_preds, zero_division=0),
+        "f1": f1_score(all_labels, all_preds, zero_division=0),
+    }
+
+    return result, prediction_rows
+
+
+def evaluate_checkpoint(
+    model_path: str | Path,
+    samples: list[dict],
+    output_dir: str | Path,
+    device: torch.device,
+) -> dict:
+    result, _ = evaluate_and_predict_checkpoint(model_path, samples, output_dir, device)
+    return result
+
+
+def predict_checkpoint(
+    model_path: str | Path,
+    samples: list[dict],
+    output_dir: str | Path,
+    device: torch.device,
+    prediction_extra_fields: Iterable[str] = (),
+) -> list[dict]:
+    _, prediction_rows = evaluate_and_predict_checkpoint(
+        model_path,
+        samples,
+        output_dir,
+        device,
+        prediction_extra_fields=prediction_extra_fields,
+    )
+    return prediction_rows
+
+
+def log_checkpoints(model_paths: list[str]) -> None:
+    logging.info("Evaluating %d checkpoint(s):", len(model_paths))
+    for model_path in model_paths:
+        logging.info(" - %s", model_path)

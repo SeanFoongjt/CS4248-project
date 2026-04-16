@@ -68,7 +68,7 @@ cover/
 *.pot
 
 # Django stuff:
-*.log
+# *.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
@@ -228,12 +228,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Custom ignore rules
-result\
 visualisations\
-*.png
-*.csv
 *url*.txt
 Thumbs.db
-*.err
-*.out
 sandboc.ipynb
